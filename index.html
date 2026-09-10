@@ -192,25 +192,17 @@ let driveItemId = null;
 let catCuentas = [], catCategorias = [], catSubcategorias = [], catDeudas = [];
 
 // ================== AUTENTICACIÓN ==================
-document.getElementById("btn-login").addEventListener("click", async () => {
+document.getElementById("btn-login").addEventListener("click", () => {
   document.getElementById("login-error").textContent = "";
   if (!msalInstance) {
     document.getElementById("login-error").textContent = "La app no cargó correctamente (ver mensaje arriba). Recarga la página.";
     return;
   }
-  try {
-    const resp = await msalInstance.loginPopup({ scopes: ["Files.ReadWrite"] });
-    cuentaActiva = resp.account;
-    await iniciarApp();
-  } catch (e) {
-    document.getElementById("login-error").textContent = "Error al iniciar sesión: " + (e.message || e);
-    console.error(e);
-  }
+  msalInstance.loginRedirect({ scopes: ["Files.ReadWrite"] });
 });
 
 document.getElementById("btn-logout").addEventListener("click", () => {
-  msalInstance.logoutPopup();
-  location.reload();
+  msalInstance.logoutRedirect();
 });
 
 async function obtenerToken() {
@@ -221,8 +213,8 @@ async function obtenerToken() {
     const resp = await msalInstance.acquireTokenSilent(request);
     return resp.accessToken;
   } catch (e) {
-    const resp = await msalInstance.acquireTokenPopup(request);
-    return resp.accessToken;
+    await msalInstance.acquireTokenRedirect(request);
+    // acquireTokenRedirect navega fuera de la página; el código después de esta línea no se ejecuta.
   }
 }
 
@@ -458,8 +450,21 @@ async function cargarConsulta() {
   }
 }
 
-// ================== RESTAURAR SESIÓN AL RECARGAR ==================
+// ================== RESTAURAR SESIÓN AL RECARGAR / VOLVER DEL LOGIN ==================
 (async () => {
+  if (!msalInstance) return;
+  try {
+    const resp = await msalInstance.handleRedirectPromise();
+    if (resp) {
+      cuentaActiva = resp.account;
+      await iniciarApp();
+      return;
+    }
+  } catch (e) {
+    document.getElementById("login-error").textContent = "Error al iniciar sesión: " + (e.message || e);
+    console.error(e);
+    return;
+  }
   const cuentas = msalInstance.getAllAccounts();
   if (cuentas.length > 0) {
     cuentaActiva = cuentas[0];
