@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Finanzas Personales</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<style>
+  :root{
+    --azul:#1F4E78; --azul-claro:#2E75B6; --verde:#2e7d32; --rojo:#c62828;
+    --fondo:#f4f6f8; --tarjeta:#ffffff; --texto:#1a1a1a; --texto-suave:#6b7280;
+    --borde:#e2e5ea;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--fondo);color:var(--texto);}
+  header{background:var(--azul);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;}
+  header h1{font-size:18px;margin:0;font-weight:600;}
+  header button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;padding:6px 12px;border-radius:6px;font-size:13px;}
+  #login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:80vh;padding:24px;text-align:center;}
+  #login-screen h2{color:var(--azul);}
+  #login-screen button, .btn-primario{background:var(--azul-claro);color:#fff;border:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;}
+  #login-screen button:hover, .btn-primario:hover{background:var(--azul);}
+  #app-screen{display:none;max-width:520px;margin:0 auto;padding-bottom:80px;}
+  nav.tabs{display:flex;background:#fff;border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:5;}
+  nav.tabs button{flex:1;padding:14px;border:none;background:none;font-size:14px;font-weight:600;color:var(--texto-suave);border-bottom:3px solid transparent;}
+  nav.tabs button.activo{color:var(--azul-claro);border-bottom-color:var(--azul-claro);}
+  section.tab{display:none;padding:16px;}
+  section.tab.activo{display:block;}
+  .campo{margin-bottom:14px;}
+  .campo label{display:block;font-size:13px;font-weight:600;color:var(--texto-suave);margin-bottom:5px;}
+  .campo select, .campo input, .campo textarea{width:100%;padding:11px;border:1px solid var(--borde);border-radius:8px;font-size:15px;background:#fff;}
+  .campo textarea{resize:vertical;min-height:50px;}
+  .oculto{display:none !important;}
+  #msg-registro{padding:10px;border-radius:8px;margin-bottom:12px;font-size:14px;display:none;}
+  #msg-registro.ok{background:#e8f5e9;color:var(--verde);display:block;}
+  #msg-registro.err{background:#fdecea;color:var(--rojo);display:block;}
+  .tarjeta{background:var(--tarjeta);border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .tarjeta .etiqueta{font-size:12px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.03em;}
+  .tarjeta .valor{font-size:26px;font-weight:700;margin-top:4px;}
+  .valor.positivo{color:var(--verde);}
+  .valor.negativo{color:var(--rojo);}
+  .fila-cuenta{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--borde);font-size:14px;}
+  .fila-cuenta:last-child{border-bottom:none;}
+  .fila-cuenta .nombre{font-weight:600;}
+  .fila-cuenta .saldo{font-weight:600;}
+  .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;}
+  .estado-carga{text-align:center;padding:30px;color:var(--texto-suave);}
+  .refrescar{background:none;border:1px solid var(--borde);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--azul-claro);float:right;}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h2>Finanzas Personales</h2>
+  <p>Inicia sesión con tu cuenta de Microsoft para registrar movimientos y consultar tu situación financiera.</p>
+  <button id="btn-login">Iniciar sesión con Microsoft</button>
+  <p id="login-error" style="color:#c62828;font-size:13px;margin-top:14px;"></p>
+</div>
+
+<div id="app-screen">
+  <header>
+    <h1>Finanzas Personales</h1>
+    <button id="btn-logout">Salir</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="registrar" class="activo">Registrar</button>
+    <button data-tab="consultar">Consultar</button>
+  </nav>
+
+  <!-- ===== TAB REGISTRAR ===== -->
+  <section id="tab-registrar" class="tab activo">
+    <div id="msg-registro"></div>
+    <form id="form-movimiento">
+      <div class="campo">
+        <label>Fecha</label>
+        <input type="date" id="f-fecha" required>
+      </div>
+      <div class="campo">
+        <label>Tipo de movimiento</label>
+        <select id="f-tipo" required>
+          <option value="">Selecciona...</option>
+          <option value="Ingreso">Ingreso</option>
+          <option value="Gasto">Gasto</option>
+          <option value="Transferencia">Transferencia</option>
+          <option value="CompraUSD">Compra de USD</option>
+          <option value="VentaUSD">Venta de USD</option>
+          <option value="ActualizacionValor">Actualización de valor (inversión)</option>
+          <option value="PagoDeuda">Pago de deuda</option>
+        </select>
+      </div>
+
+      <div class="campo" id="c-origen">
+        <label>Cuenta origen</label>
+        <select id="f-origen"><option value="">Selecciona...</option></select>
+      </div>
+      <div class="campo" id="c-destino">
+        <label>Cuenta destino</label>
+        <select id="f-destino"><option value="">Selecciona...</option></select>
+      </div>
+
+      <div class="campo">
+        <label>Monto</label>
+        <input type="number" step="0.01" id="f-monto" required>
+      </div>
+      <div class="campo">
+        <label>Moneda</label>
+        <select id="f-moneda">
+          <option value="COP">COP</option>
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </div>
+
+      <div class="campo oculto" id="c-trm">
+        <label>TRM de la operación</label>
+        <input type="number" step="0.01" id="f-trm">
+      </div>
+
+      <div class="campo oculto" id="c-categoria">
+        <label>Categoría</label>
+        <select id="f-categoria"><option value="">Selecciona...</option></select>
+      </div>
+      <div class="campo oculto" id="c-subcategoria">
+        <label>Subcategoría</label>
+        <select id="f-subcategoria"><option value="">Selecciona...</option></select>
+      </div>
+
+      <div class="campo oculto" id="c-deuda">
+        <label>Deuda</label>
+        <select id="f-deuda"><option value="">Selecciona...</option></select>
+      </div>
+
+      <div class="campo">
+        <label>Descripción (opcional)</label>
+        <textarea id="f-descripcion"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primario" style="width:100%;">Registrar movimiento</button>
+    </form>
+  </section>
+
+  <!-- ===== TAB CONSULTAR ===== -->
+  <section id="tab-consultar" class="tab">
+    <button class="refrescar" id="btn-refrescar">↻ Actualizar</button>
+    <div id="consultar-contenido">
+      <div class="estado-carga">Cargando...</div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ================== CONFIGURACIÓN ==================
+const msalConfig = {
+  auth: {
+    clientId: "ef5ac3c3-1563-413e-a0cf-8dbe19bd0d14",
+    authority: "https://login.microsoftonline.com/common",
+    redirectUri: "https://juanjocrim30.github.io/finanzas-app/"
+  },
+  cache: { cacheLocation: "sessionStorage" }
+};
+const NOMBRE_ARCHIVO = "Finanzas_Personales.xlsx";
+const GRAPH = "https://graph.microsoft.com/v1.0";
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+let cuentaActiva = null;
+let driveItemId = null;
+
+// Caché en memoria de catálogos
+let catCuentas = [], catCategorias = [], catSubcategorias = [], catDeudas = [];
+
+// ================== AUTENTICACIÓN ==================
+document.getElementById("btn-login").addEventListener("click", async () => {
+  document.getElementById("login-error").textContent = "";
+  try {
+    const resp = await msalInstance.loginPopup({ scopes: ["Files.ReadWrite"] });
+    cuentaActiva = resp.account;
+    await iniciarApp();
+  } catch (e) {
+    document.getElementById("login-error").textContent = "Error al iniciar sesión: " + (e.message || e);
+    console.error(e);
+  }
+});
+
+document.getElementById("btn-logout").addEventListener("click", () => {
+  msalInstance.logoutPopup();
+  location.reload();
+});
+
+async function obtenerToken() {
+  const cuentas = msalInstance.getAllAccounts();
+  if (cuentas.length === 0) throw new Error("No hay sesión activa");
+  const request = { scopes: ["Files.ReadWrite"], account: cuentas[0] };
+  try {
+    const resp = await msalInstance.acquireTokenSilent(request);
+    return resp.accessToken;
+  } catch (e) {
+    const resp = await msalInstance.acquireTokenPopup(request);
+    return resp.accessToken;
+  }
+}
+
+async function graphFetch(path, options = {}) {
+  const token = await obtenerToken();
+  const resp = await fetch(GRAPH + path, {
+    ...options,
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  if (!resp.ok) {
+    const texto = await resp.text();
+    throw new Error(`Graph API ${resp.status}: ${texto}`);
+  }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+// ================== ARRANQUE DE LA APP ==================
+async function iniciarApp() {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app-screen").style.display = "block";
+  document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
+
+  try {
+    // Buscar el archivo en OneDrive
+    const busqueda = await graphFetch(`/me/drive/root/search(q='${NOMBRE_ARCHIVO}')`);
+    if (!busqueda.value || busqueda.value.length === 0) {
+      throw new Error(`No encontré "${NOMBRE_ARCHIVO}" en tu OneDrive. Verifica el nombre exacto del archivo.`);
+    }
+    driveItemId = busqueda.value[0].id;
+
+    await Promise.all([cargarCuentas(), cargarCategorias(), cargarSubcategorias(), cargarDeudas()]);
+    poblarSelects();
+    await cargarConsulta();
+  } catch (e) {
+    mostrarMensajeRegistro("err", "Error al cargar datos: " + e.message);
+    console.error(e);
+  }
+}
+
+// ================== LECTURA DE CATÁLOGOS (por nombre de tabla) ==================
+async function leerTabla(nombreTabla) {
+  const headerResp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/tables('${nombreTabla}')/headerRowRange`);
+  const headers = headerResp.values[0].map(h => String(h).trim());
+  const filasResp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/tables('${nombreTabla}')/rows`);
+  const filas = filasResp.value.map(r => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = r.values[0][i]);
+    return obj;
+  });
+  return filas;
+}
+
+async function cargarCuentas() {
+  const filas = await leerTabla("tbl_Cuentas");
+  catCuentas = filas.filter(f => f.CuentaID && (f.Estado === "Activo" || !f.Estado));
+}
+async function cargarCategorias() {
+  catCategorias = (await leerTabla("tbl_Categorias")).filter(f => f.CategoriaID);
+}
+async function cargarSubcategorias() {
+  catSubcategorias = (await leerTabla("tbl_Subcategorias")).filter(f => f.SubcategoriaID);
+}
+async function cargarDeudas() {
+  const filas = await leerTabla("tbl_Deudas");
+  catDeudas = filas.filter(f => f.DeudaID && f.Estado === "Activa");
+}
+
+function poblarSelects() {
+  const selOrigen = document.getElementById("f-origen");
+  const selDestino = document.getElementById("f-destino");
+  catCuentas.forEach(c => {
+    selOrigen.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`;
+    selDestino.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`;
+  });
+  const selCat = document.getElementById("f-categoria");
+  catCategorias.forEach(c => {
+    selCat.innerHTML += `<option value="${c.CategoriaID}">${c.Nombre}</option>`;
+  });
+  const selDeuda = document.getElementById("f-deuda");
+  catDeudas.forEach(d => {
+    selDeuda.innerHTML += `<option value="${d.DeudaID}">${d.Nombre}</option>`;
+  });
+}
+
+function actualizarSubcategorias() {
+  const catID = document.getElementById("f-categoria").value;
+  const selSub = document.getElementById("f-subcategoria");
+  selSub.innerHTML = '<option value="">Selecciona...</option>';
+  catSubcategorias.filter(s => s.CategoriaID === catID).forEach(s => {
+    selSub.innerHTML += `<option value="${s.SubcategoriaID}">${s.Nombre}</option>`;
+  });
+}
+document.getElementById("f-categoria").addEventListener("change", actualizarSubcategorias);
+
+// ================== FORMULARIO INTELIGENTE (mostrar/ocultar por tipo) ==================
+document.getElementById("f-tipo").addEventListener("change", (e) => {
+  const tipo = e.target.value;
+  const show = (id, cond) => document.getElementById(id).classList.toggle("oculto", !cond);
+  show("c-origen", tipo !== "Ingreso" && tipo !== "");
+  show("c-destino", tipo !== "Gasto" && tipo !== "PagoDeuda" && tipo !== "");
+  show("c-trm", tipo === "CompraUSD" || tipo === "VentaUSD");
+  show("c-categoria", tipo === "Gasto" || tipo === "Ingreso");
+  show("c-subcategoria", tipo === "Gasto");
+  show("c-deuda", tipo === "PagoDeuda");
+});
+
+// ================== ENVÍO DEL FORMULARIO ==================
+document.getElementById("form-movimiento").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+
+  try {
+    const tipo = document.getElementById("f-tipo").value;
+    const val = id => { const v = document.getElementById(id).value; return v === "" ? null : v; };
+
+    // Orden EXACTO de columnas de tbl_Movimientos (A a R).
+    // null en las columnas con fórmula: Excel las calcula solo al insertar la fila.
+    const fila = [
+      null,                                   // A MovimientoID (fórmula)
+      val("f-fecha"),                         // B Fecha
+      tipo,                                   // C TipoMovimiento
+      val("f-origen"),                        // D CuentaOrigen
+      val("f-destino"),                       // E CuentaDestino
+      parseFloat(val("f-monto")),             // F Monto
+      val("f-moneda"),                        // G Moneda
+      val("f-trm") ? parseFloat(val("f-trm")) : null, // H TRM_Operacion
+      val("f-categoria"),                     // I CategoriaID
+      val("f-subcategoria"),                  // J SubcategoriaID
+      null,                                   // K ClasificacionGasto (fórmula)
+      val("f-deuda"),                         // L DeudaID
+      val("f-descripcion") || "",             // M Descripcion
+      null, null, null, null,                 // N,O,P,Q (fórmulas)
+      (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())) // R RegistroID
+    ];
+
+    await graphFetch(`/me/drive/items/${driveItemId}/workbook/tables('tbl_Movimientos')/rows/add`, {
+      method: "POST",
+      body: JSON.stringify({ values: [fila] })
+    });
+
+    mostrarMensajeRegistro("ok", "Movimiento registrado ✓");
+    e.target.reset();
+    document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
+    document.querySelectorAll(".campo").forEach(c => c.classList.add("oculto"));
+    document.getElementById("c-origen").classList.remove("oculto");
+    document.getElementById("c-destino").classList.remove("oculto");
+  } catch (err) {
+    mostrarMensajeRegistro("err", "No se pudo guardar: " + err.message);
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Registrar movimiento";
+  }
+});
+
+function mostrarMensajeRegistro(tipo, texto) {
+  const el = document.getElementById("msg-registro");
+  el.className = tipo;
+  el.textContent = texto;
+  setTimeout(() => { el.className = ""; el.textContent = ""; }, 6000);
+}
+
+// ================== TABS ==================
+document.querySelectorAll("nav.tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav.tabs button").forEach(b => b.classList.remove("activo"));
+    document.querySelectorAll("section.tab").forEach(s => s.classList.remove("activo"));
+    btn.classList.add("activo");
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("activo");
+  });
+});
+document.getElementById("btn-refrescar").addEventListener("click", cargarConsulta);
+
+// ================== TAB CONSULTAR ==================
+function num(v) {
+  if (v === null || v === undefined || v === "" || typeof v === "string") return null;
+  return v;
+}
+function formatoMoneda(n) {
+  if (n === null || n === undefined) return "—";
+  return n.toLocaleString("es-CO", { maximumFractionDigits: 0 });
+}
+
+async function cargarConsulta() {
+  const cont = document.getElementById("consultar-contenido");
+  cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
+  try {
+    const resumen = (await leerTabla("tbl_Resumen"))[0] || {};
+    const cuentas = await leerTabla("tbl_Cuentas");
+    const deudas = (await leerTabla("tbl_Deudas")).filter(d => d.Estado === "Activa");
+
+    const patrimonio = num(resumen.PatrimonioNeto);
+    const claseValor = patrimonio === null ? "" : (patrimonio >= 0 ? "positivo" : "negativo");
+
+    let html = `
+      <div class="tarjeta">
+        <div class="etiqueta">Patrimonio neto</div>
+        <div class="valor ${claseValor}">${formatoMoneda(patrimonio)}</div>
+      </div>
+      <div class="tarjeta">
+        <div class="etiqueta">Tasa de ahorro del mes</div>
+        <div class="valor">${resumen.TasaAhorroMes !== undefined && resumen.TasaAhorroMes !== "" ? (resumen.TasaAhorroMes*100).toFixed(1)+"%" : "—"}</div>
+      </div>
+    `;
+
+    html += `<div class="subtitulo">Saldo por cuenta</div><div class="tarjeta">`;
+    cuentas.forEach(c => {
+      html += `<div class="fila-cuenta"><span class="nombre">${c.Nombre}</span><span class="saldo">${formatoMoneda(num(c.SaldoActual))} ${c.Moneda||""}</span></div>`;
+    });
+    html += `</div>`;
+
+    html += `<div class="subtitulo">Deudas activas</div><div class="tarjeta">`;
+    if (deudas.length === 0) {
+      html += `<div class="fila-cuenta"><span>Sin deudas activas</span></div>`;
+    } else {
+      deudas.forEach(d => {
+        html += `<div class="fila-cuenta"><span class="nombre">${d.Nombre}</span><span class="saldo">${formatoMoneda(num(d.SaldoPendiente))}</span></div>`;
+      });
+    }
+    html += `</div>`;
+
+    cont.innerHTML = html;
+  } catch (e) {
+    cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
+    console.error(e);
+  }
+}
+
+// ================== RESTAURAR SESIÓN AL RECARGAR ==================
+(async () => {
+  const cuentas = msalInstance.getAllAccounts();
+  if (cuentas.length > 0) {
+    cuentaActiva = cuentas[0];
+    await iniciarApp();
+  }
+})();
+</script>
+</body>
+</html>
