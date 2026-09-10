@@ -4,7 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Finanzas Personales</title>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>
+  // Muestra cualquier error de JavaScript en pantalla, para poder depurar desde el celular sin consola.
+  window.addEventListener("error", (e) => {
+    const el = document.getElementById("login-error");
+    if (el) el.textContent = "Error técnico: " + e.message;
+  });
+</script>
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
+<script>
+  // Respaldo: si el CDN principal (EE.UU.) falla, intenta el CDN alterno (Europa)
+  if (typeof msal === 'undefined') {
+    document.write(unescape("%3Cscript src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js' type='text/javascript'%3E%3C/script%3E"));
+  }
+</script>
 <style>
   :root{
     --azul:#1F4E78; --azul-claro:#2E75B6; --verde:#2e7d32; --rojo:#c62828;
@@ -162,7 +175,16 @@ const msalConfig = {
 const NOMBRE_ARCHIVO = "Finanzas_Personales.xlsx";
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
-const msalInstance = new msal.PublicClientApplication(msalConfig);
+let msalInstance;
+try {
+  if (typeof msal === "undefined") {
+    throw new Error("La librería de Microsoft (MSAL) no cargó. Revisa tu conexión a internet o si algún bloqueador de anuncios está interfiriendo, y recarga la página.");
+  }
+  msalInstance = new msal.PublicClientApplication(msalConfig);
+} catch (e) {
+  document.getElementById("login-error").textContent = e.message;
+  console.error(e);
+}
 let cuentaActiva = null;
 let driveItemId = null;
 
@@ -172,6 +194,10 @@ let catCuentas = [], catCategorias = [], catSubcategorias = [], catDeudas = [];
 // ================== AUTENTICACIÓN ==================
 document.getElementById("btn-login").addEventListener("click", async () => {
   document.getElementById("login-error").textContent = "";
+  if (!msalInstance) {
+    document.getElementById("login-error").textContent = "La app no cargó correctamente (ver mensaje arriba). Recarga la página.";
+    return;
+  }
   try {
     const resp = await msalInstance.loginPopup({ scopes: ["Files.ReadWrite"] });
     cuentaActiva = resp.account;
