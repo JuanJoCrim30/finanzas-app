@@ -243,12 +243,34 @@ async function iniciarApp() {
   document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
 
   try {
-    // Buscar el archivo en OneDrive
-    const busqueda = await graphFetch(`/me/drive/root/search(q='${NOMBRE_ARCHIVO}')`);
-    if (!busqueda.value || busqueda.value.length === 0) {
-      throw new Error(`No encontré "${NOMBRE_ARCHIVO}" en tu OneDrive. Verifica el nombre exacto del archivo.`);
+    // Intento 1: acceso directo por ruta (más rápido y confiable que la búsqueda)
+    driveItemId = localStorage.getItem("driveItemId_" + NOMBRE_ARCHIVO) || null;
+    if (driveItemId) {
+      const valido = await graphFetch(`/me/drive/items/${driveItemId}`).catch(() => null);
+      if (!valido) driveItemId = null;
     }
-    driveItemId = busqueda.value[0].id;
+
+    if (!driveItemId) {
+      const rutasCandidatas = [
+        `/me/drive/root:/Documents/${NOMBRE_ARCHIVO}`,
+        `/me/drive/root:/${NOMBRE_ARCHIVO}`
+      ];
+      for (const ruta of rutasCandidatas) {
+        const item = await graphFetch(ruta).catch(() => null);
+        if (item) { driveItemId = item.id; break; }
+      }
+    }
+
+    if (!driveItemId) {
+      // Último recurso: búsqueda (puede tardar en indexar archivos recién guardados)
+      const busqueda = await graphFetch(`/me/drive/root/search(q='${NOMBRE_ARCHIVO}')`);
+      if (!busqueda.value || busqueda.value.length === 0) {
+        throw new Error(`No encontré "${NOMBRE_ARCHIVO}" en tu OneDrive (probé ruta directa y búsqueda). Verifica el nombre exacto y que esté sincronizado con OneDrive.`);
+      }
+      driveItemId = busqueda.value[0].id;
+    }
+
+    localStorage.setItem("driveItemId_" + NOMBRE_ARCHIVO, driveItemId);
 
     await Promise.all([cargarCuentas(), cargarCategorias(), cargarSubcategorias(), cargarDeudas()]);
     poblarSelects();
