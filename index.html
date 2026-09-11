@@ -214,7 +214,7 @@
     <div class="filtro-mes">
       <div>
         <label>Mes a analizar</label>
-        <select id="filtro-mes"></select>
+        <input type="month" id="filtro-mes">
       </div>
       <button id="btn-aplicar-mes" class="btn-secundario">Aplicar</button>
       <button class="refrescar" id="btn-refrescar" style="margin-left:auto;">↻</button>
@@ -311,25 +311,10 @@ async function graphFetch(path, options = {}) {
 }
 
 // ================== ARRANQUE DE LA APP ==================
-function poblarFiltroMes() {
-  const sel = document.getElementById("filtro-mes");
-  const meses3 = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const hoy = new Date();
-  let html = "";
-  for (let i = 0; i < 25; i++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const valor = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-    const etiqueta = `${meses3[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
-    html += `<option value="${valor}">${etiqueta}</option>`;
-  }
-  sel.innerHTML = html;
-}
-
 async function iniciarApp() {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app-screen").style.display = "block";
   document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
-  poblarFiltroMes();
 
   try {
     // Intento 1: acceso directo por ruta (más rápido y confiable que la búsqueda)
