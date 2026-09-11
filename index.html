@@ -18,6 +18,7 @@
     document.write(unescape("%3Cscript src='https://alcdn.msftauth.net/browser/2.35.0/js/msal-browser.min.js' type='text/javascript'%3E%3C/script%3E"));
   }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root{
     --azul:#1F4E78; --azul-claro:#2E75B6; --verde:#2e7d32; --rojo:#c62828;
@@ -59,6 +60,22 @@
   .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;}
   .estado-carga{text-align:center;padding:30px;color:var(--texto-suave);}
   .refrescar{background:none;border:1px solid var(--borde);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--azul-claro);float:right;}
+  .filtro-mes{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
+  .filtro-mes label{display:block;font-size:12px;color:var(--texto-suave);margin-bottom:4px;}
+  .filtro-mes input{padding:9px;border:1px solid var(--borde);border-radius:8px;font-size:14px;}
+  .btn-secundario{background:var(--azul-claro);color:#fff;border:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;}
+  .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;}
+  .kpi-grid .tarjeta{margin-bottom:0;padding:12px;}
+  .kpi-grid .valor{font-size:19px;}
+  .kpi-grid .etiqueta{font-size:11px;}
+  .barra-progreso{position:relative;height:22px;background:#eef1f4;border-radius:6px;overflow:hidden;margin:8px 0;}
+  .barra-progreso .marca-transcurrido{position:absolute;top:0;bottom:0;width:2px;background:#374151;}
+  .barra-progreso .relleno{height:100%;border-radius:6px;}
+  .barra-progreso .relleno.ok{background:#66bb6a;}
+  .barra-progreso .relleno.alerta{background:#ef5350;}
+  .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
+  .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
+  #grafico-composicion{max-width:220px;margin:0 auto;display:block;}
 </style>
 </head>
 <body>
@@ -155,7 +172,14 @@
 
   <!-- ===== TAB CONSULTAR ===== -->
   <section id="tab-consultar" class="tab">
-    <button class="refrescar" id="btn-refrescar">↻ Actualizar</button>
+    <div class="filtro-mes">
+      <div>
+        <label>Mes a analizar</label>
+        <input type="month" id="filtro-mes">
+      </div>
+      <button id="btn-aplicar-mes" class="btn-secundario">Aplicar</button>
+      <button class="refrescar" id="btn-refrescar" style="margin-left:auto;">↻</button>
+    </div>
     <div id="consultar-contenido">
       <div class="estado-carga">Cargando...</div>
     </div>
@@ -387,7 +411,9 @@ document.getElementById("form-movimiento").addEventListener("submit", async (e) 
     mostrarMensajeRegistro("ok", "Movimiento registrado ✓");
     e.target.reset();
     document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
-    document.querySelectorAll(".campo").forEach(c => c.classList.add("oculto"));
+    ["c-trm", "c-categoria", "c-subcategoria", "c-deuda"].forEach(id =>
+      document.getElementById(id).classList.add("oculto")
+    );
     document.getElementById("c-origen").classList.remove("oculto");
     document.getElementById("c-destino").classList.remove("oculto");
   } catch (err) {
@@ -415,7 +441,6 @@ document.querySelectorAll("nav.tabs button").forEach(btn => {
     document.getElementById("tab-" + btn.dataset.tab).classList.add("activo");
   });
 });
-document.getElementById("btn-refrescar").addEventListener("click", cargarConsulta);
 
 // ================== TAB CONSULTAR ==================
 function num(v) {
@@ -423,53 +448,179 @@ function num(v) {
   return v;
 }
 function formatoMoneda(n) {
-  if (n === null || n === undefined) return "—";
+  n = num(n);
+  if (n === null) return "—";
   return n.toLocaleString("es-CO", { maximumFractionDigits: 0 });
 }
+function formatoPorcentaje(n) {
+  n = num(n);
+  if (n === null) return "—";
+  return (n * 100).toFixed(1) + "%";
+}
+const ORDEN_TIPO = ["Efectivo","Ahorros","CuentaRemunerada","CDT","FondoInversion","TarjetaCredito"];
+const ORDEN_MONEDA = ["COP","USD","EUR"];
+function agruparCuentas(cuentas) {
+  const grupos = {};
+  cuentas.forEach(c => {
+    const tipo = c.TipoCuenta || "Otro";
+    if (!grupos[tipo]) grupos[tipo] = [];
+    grupos[tipo].push(c);
+  });
+  const tipos = Object.keys(grupos).sort((a,b) => {
+    const ia = ORDEN_TIPO.indexOf(a), ib = ORDEN_TIPO.indexOf(b);
+    return (ia===-1?99:ia) - (ib===-1?99:ib);
+  });
+  return tipos.map(tipo => ({
+    tipo,
+    cuentas: grupos[tipo].sort((a,b) => {
+      const ia = ORDEN_MONEDA.indexOf(a.Moneda), ib = ORDEN_MONEDA.indexOf(b.Moneda);
+      return (ia===-1?99:ia) - (ib===-1?99:ib);
+    })
+  }));
+}
+const NOMBRE_TIPO = {
+  Efectivo: "Efectivo", Ahorros: "Ahorros", CuentaRemunerada: "Cuentas remuneradas",
+  CDT: "CDT", FondoInversion: "Fondos de inversión", TarjetaCredito: "Tarjetas de crédito", Otro: "Otras cuentas"
+};
+
+let chartComposicion = null;
+
+async function leerCeldaDashboard(direccion) {
+  const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
+  return resp.values[0][0];
+}
+
+document.getElementById("btn-aplicar-mes").addEventListener("click", async () => {
+  const mes = document.getElementById("filtro-mes").value; // formato YYYY-MM, igual al que espera Dashboard!B6
+  if (!mes) return;
+  const btn = document.getElementById("btn-aplicar-mes");
+  btn.disabled = true; btn.textContent = "...";
+  try {
+    await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='B6')`, {
+      method: "PATCH",
+      body: JSON.stringify({ values: [[mes]] })
+    });
+    await graphFetch(`/me/drive/items/${driveItemId}/workbook/application/calculate`, {
+      method: "POST",
+      body: JSON.stringify({ calculationType: "Full" })
+    });
+    await cargarConsulta();
+  } catch (e) {
+    document.getElementById("consultar-contenido").innerHTML =
+      `<div class="estado-carga" style="color:#c62828;">No se pudo aplicar el filtro de mes: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "Aplicar";
+  }
+});
+document.getElementById("btn-refrescar").addEventListener("click", cargarConsulta);
 
 async function cargarConsulta() {
   const cont = document.getElementById("consultar-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const resumen = (await leerTabla("tbl_Resumen"))[0] || {};
-    const cuentas = await leerTabla("tbl_Cuentas");
-    const deudas = (await leerTabla("tbl_Deudas")).filter(d => d.Estado === "Activa");
+    const [filasResumen, cuentas, deudasTodas, mesActual] = await Promise.all([
+      leerTabla("tbl_Resumen"),
+      leerTabla("tbl_Cuentas"),
+      leerTabla("tbl_Deudas"),
+      leerCeldaDashboard("B6")
+    ]);
+    const resumen = filasResumen[0] || {};
+    const deudas = deudasTodas.filter(d => d.Estado === "Activa");
+
+    if (!document.getElementById("filtro-mes").value) {
+      document.getElementById("filtro-mes").value = mesActual;
+    }
 
     const patrimonio = num(resumen.PatrimonioNeto);
-    const claseValor = patrimonio === null ? "" : (patrimonio >= 0 ? "positivo" : "negativo");
+    const variacion = num(resumen.VariacionPatrimonioMes);
+    const variacionPct = num(resumen.VariacionPatrimonioPct);
+    const flecha = variacion === null ? "" : (variacion >= 0 ? "▲" : "▼");
+    const claseVar = variacion === null ? "" : (variacion >= 0 ? "positivo" : "negativo");
+
+    const pctTranscurrido = num(resumen.PctMesTranscurrido);
+    const pctGastado = num(resumen.PctPresupuestoGastado);
+    const enAlerta = pctTranscurrido !== null && pctGastado !== null && pctGastado > pctTranscurrido;
 
     let html = `
       <div class="tarjeta">
-        <div class="etiqueta">Patrimonio neto</div>
-        <div class="valor ${claseValor}">${formatoMoneda(patrimonio)}</div>
+        <div class="etiqueta">Patrimonio neto — ${resumen.MesAnalizado || ""}</div>
+        <div class="valor ${patrimonio!==null && patrimonio<0?"negativo":"positivo"}">${formatoMoneda(patrimonio)}</div>
+        ${variacion !== null ? `<div class="etiqueta ${claseVar}">${flecha} ${formatoMoneda(Math.abs(variacion))} (${formatoPorcentaje(variacionPct)}) vs. mes anterior</div>` : ""}
       </div>
+
+      <div class="kpi-grid">
+        <div class="tarjeta"><div class="etiqueta">Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
+        <div class="tarjeta"><div class="etiqueta">Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
+        <div class="tarjeta"><div class="etiqueta">Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
+        <div class="tarjeta"><div class="etiqueta">Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
+      </div>
+
       <div class="tarjeta">
-        <div class="etiqueta">Tasa de ahorro del mes</div>
-        <div class="valor">${resumen.TasaAhorroMes !== undefined && resumen.TasaAhorroMes !== "" ? (resumen.TasaAhorroMes*100).toFixed(1)+"%" : "—"}</div>
+        <div class="etiqueta">Ritmo de gasto del mes</div>
+        <div class="barra-progreso">
+          <div class="relleno ${enAlerta?"alerta":"ok"}" style="width:${pctGastado!==null?Math.min(pctGastado*100,100):0}%;"></div>
+          ${pctTranscurrido!==null ? `<div class="marca-transcurrido" style="left:${Math.min(pctTranscurrido*100,100)}%;"></div>` : ""}
+        </div>
+        <div class="leyenda-barra"><span>Gastado: ${formatoPorcentaje(pctGastado)}</span><span>Mes transcurrido: ${formatoPorcentaje(pctTranscurrido)}</span></div>
+        <div style="font-size:13px;margin-top:6px;color:${enAlerta?'var(--rojo)':'var(--verde)'};">${resumen.EstadoRitmoGasto || ""}</div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="etiqueta" style="margin-bottom:8px;">Composición de activos</div>
+        <canvas id="grafico-composicion" height="200"></canvas>
       </div>
     `;
 
-    html += `<div class="subtitulo">Saldo por cuenta</div><div class="tarjeta">`;
-    cuentas.forEach(c => {
-      html += `<div class="fila-cuenta"><span class="nombre">${c.Nombre}</span><span class="saldo">${formatoMoneda(num(c.SaldoActual))} ${c.Moneda||""}</span></div>`;
+    const grupos = agruparCuentas(cuentas.filter(c => c.Estado === "Activo" || !c.Estado));
+    html += `<div class="subtitulo">Saldo por cuenta</div>`;
+    grupos.forEach(g => {
+      html += `<div class="grupo-cuenta-titulo">${NOMBRE_TIPO[g.tipo] || g.tipo}</div><div class="tarjeta">`;
+      g.cuentas.forEach(c => {
+        html += `<div class="fila-cuenta"><span class="nombre">${c.Nombre}</span><span class="saldo">${formatoMoneda(c.SaldoActual)} ${c.Moneda||""}</span></div>`;
+      });
+      html += `</div>`;
     });
-    html += `</div>`;
 
     html += `<div class="subtitulo">Deudas activas</div><div class="tarjeta">`;
     if (deudas.length === 0) {
       html += `<div class="fila-cuenta"><span>Sin deudas activas</span></div>`;
     } else {
       deudas.forEach(d => {
-        html += `<div class="fila-cuenta"><span class="nombre">${d.Nombre}</span><span class="saldo">${formatoMoneda(num(d.SaldoPendiente))}</span></div>`;
+        html += `<div class="fila-cuenta"><span class="nombre">${d.Nombre}</span><span class="saldo">${formatoMoneda(d.SaldoPendiente)}</span></div>`;
       });
     }
     html += `</div>`;
 
     cont.innerHTML = html;
+    dibujarGraficoComposicion(grupos);
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
   }
+}
+
+function dibujarGraficoComposicion(grupos) {
+  const canvas = document.getElementById("grafico-composicion");
+  if (!canvas) return;
+  if (typeof Chart === "undefined") {
+    canvas.replaceWith(Object.assign(document.createElement("div"), {
+      className: "estado-carga", textContent: "El gráfico no cargó (sin conexión al CDN)."
+    }));
+    return;
+  }
+  // Nota: suma cuentas en distinta moneda tal cual (sin convertir a COP); es una aproximación visual
+  // de qué tan repartido está tu dinero entre tipos de cuenta, no un valor exacto en una sola moneda.
+  const etiquetas = grupos.map(g => NOMBRE_TIPO[g.tipo] || g.tipo);
+  const valores = grupos.map(g => g.cuentas.reduce((s,c) => s + (num(c.SaldoActual) || 0), 0));
+  if (chartComposicion) chartComposicion.destroy();
+  chartComposicion = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: etiquetas,
+      datasets: [{ data: valores, backgroundColor: ["#2E75B6","#1F4E78","#66bb6a","#ffa726","#ab47bc","#78909c"] }]
+    },
+    options: { plugins: { legend: { position: "bottom", labels: { font: { size: 11 } } } } }
+  });
 }
 
 // ================== RESTAURAR SESIÓN AL RECARGAR / VOLVER DEL LOGIN ==================
