@@ -86,6 +86,14 @@
   .acordeon-contenido{padding:0 14px;}
   .acordeon-contenido.oculto{display:none;}
   .acordeon-contenido .fila-cuenta{padding:9px 0;}
+  table.tabla-datos{width:100%;border-collapse:collapse;font-size:13px;}
+  table.tabla-datos th{text-align:left;font-size:11px;color:var(--texto-suave);text-transform:uppercase;padding-bottom:6px;border-bottom:1px solid var(--borde);}
+  table.tabla-datos td{padding:8px 4px;border-bottom:1px solid var(--borde);}
+  table.tabla-datos tr:last-child td{border-bottom:none;}
+  table.tabla-datos td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .barra-mini{height:6px;background:#eef1f4;border-radius:3px;margin-top:4px;overflow:hidden;}
+  .barra-mini .relleno-mini{height:100%;background:var(--azul-claro);}
+  .semaforo-icono{font-size:14px;}
 </style>
 </head>
 <body>
@@ -141,7 +149,7 @@
 
       <div class="campo">
         <label>Monto</label>
-        <input type="number" step="0.01" id="f-monto" required>
+        <input type="number" step="0.01" min="0.01" id="f-monto" required>
       </div>
       <div class="campo">
         <label>Moneda</label>
@@ -154,7 +162,7 @@
 
       <div class="campo oculto" id="c-trm">
         <label>TRM de la operación</label>
-        <input type="number" step="0.01" id="f-trm">
+        <input type="number" step="0.01" min="0.01" id="f-trm">
       </div>
 
       <div class="campo oculto" id="c-categoria">
@@ -400,15 +408,49 @@ document.getElementById("f-tipo").addEventListener("change", (e) => {
   actualizarOpcionesPorTipo(tipo);
 });
 
+// ================== VALIDACIÓN DEL FORMULARIO ==================
+function validarFormulario(tipo) {
+  const errores = [];
+  const val = id => document.getElementById(id).value;
+  const visible = id => !document.getElementById(id).classList.contains("oculto");
+
+  if (!val("f-fecha")) errores.push("Fecha");
+  if (!tipo) errores.push("Tipo de movimiento");
+  const monto = parseFloat(val("f-monto"));
+  if (isNaN(monto) || monto <= 0) errores.push("Monto (debe ser mayor a 0)");
+
+  const chequear = (contId, inputId, etiqueta) => {
+    if (visible(contId) && !val(inputId)) errores.push(etiqueta);
+  };
+  chequear("c-origen", "f-origen", "Cuenta origen");
+  chequear("c-destino", "f-destino", "Cuenta destino");
+  chequear("c-categoria", "f-categoria", "Categoría");
+  chequear("c-subcategoria", "f-subcategoria", "Subcategoría");
+  chequear("c-deuda", "f-deuda", "Deuda");
+
+  if (visible("c-trm")) {
+    const trm = parseFloat(val("f-trm"));
+    if (isNaN(trm) || trm <= 0) errores.push("TRM de la operación (debe ser mayor a 0)");
+  }
+  return errores;
+}
+
 // ================== ENVÍO DEL FORMULARIO ==================
 document.getElementById("form-movimiento").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const tipo = document.getElementById("f-tipo").value;
+
+  const errores = validarFormulario(tipo);
+  if (errores.length > 0) {
+    mostrarMensajeRegistro("err", "Completa o corrige: " + errores.join(", "));
+    return;
+  }
+
   const btn = e.target.querySelector("button[type=submit]");
   btn.disabled = true;
   btn.textContent = "Guardando...";
 
   try {
-    const tipo = document.getElementById("f-tipo").value;
     const val = id => { const v = document.getElementById(id).value; return v === "" ? null : v; };
 
     // Orden EXACTO de columnas de tbl_Movimientos (A a R).
@@ -518,9 +560,21 @@ const NOMBRE_TIPO = {
 
 let chartComposicion = null;
 
-async function leerCeldaDashboard(direccion) {
+async function leerRangoDashboard(direccion) {
   const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
-  return resp.values[0][0];
+  return resp.values;
+}
+async function leerCeldaDashboard(direccion) {
+  const valores = await leerRangoDashboard(direccion);
+  return valores[0][0];
+}
+
+function semaforoPresupuesto(presupuestado, real) {
+  if (!presupuestado || presupuestado <= 0) return { icono: "⚪", texto: "Sin presupuesto", prioridad: 3 };
+  const pct = real / presupuestado;
+  if (pct > 1) return { icono: "🔴", texto: "Excedido", prioridad: 0 };
+  if (pct > 0.8) return { icono: "🟡", texto: "Cerca del límite", prioridad: 1 };
+  return { icono: "🟢", texto: "Bien", prioridad: 2 };
 }
 
 document.getElementById("btn-aplicar-mes").addEventListener("click", async () => {
@@ -551,14 +605,18 @@ async function cargarConsulta() {
   const cont = document.getElementById("consultar-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const [filasResumen, cuentas, deudasTodas, mesActual] = await Promise.all([
+    const [filasResumen, cuentas, deudasTodas, mesActual, filasPresupuesto] = await Promise.all([
       leerTabla("tbl_Resumen"),
       leerTabla("tbl_Cuentas"),
       leerTabla("tbl_Deudas"),
-      leerCeldaDashboard("B6")
+      leerCeldaDashboard("B6"),
+      leerRangoDashboard("G5:I16")
     ]);
     const resumen = filasResumen[0] || {};
     const deudas = deudasTodas.filter(d => d.Estado === "Activa");
+    const categorias = filasPresupuesto.map(([nombre, presupuestado, real]) => ({
+      nombre, presupuestado: num(presupuestado) || 0, real: num(real) || 0
+    }));
 
     if (!document.getElementById("filtro-mes").value) {
       document.getElementById("filtro-mes").value = mesActual;
@@ -603,6 +661,41 @@ async function cargarConsulta() {
         <canvas id="grafico-composicion" height="200"></canvas>
       </div>
     `;
+
+    // ---- Distribución de gastos del mes ----
+    const conGasto = categorias.filter(c => c.real > 0).sort((a,b) => b.real - a.real);
+    const totalGastoMes = conGasto.reduce((s,c) => s + c.real, 0);
+    html += `<div class="subtitulo">Distribución de gastos del mes</div><div class="tarjeta">`;
+    if (conGasto.length === 0) {
+      html += `<div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div>`;
+    } else {
+      html += `<table class="tabla-datos"><thead><tr><th>Categoría</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
+      conGasto.forEach(c => {
+        const pct = totalGastoMes > 0 ? (c.real/totalGastoMes*100) : 0;
+        html += `<tr><td>${c.nombre}<div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div></td>
+                  <td class="num">${formatoMoneda(c.real)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+
+    // ---- Cumplimiento de presupuesto (semáforo) ----
+    const relevantes = categorias
+      .filter(c => c.presupuestado > 0 || c.real > 0)
+      .map(c => ({ ...c, semaforo: semaforoPresupuesto(c.presupuestado, c.real) }))
+      .sort((a,b) => a.semaforo.prioridad - b.semaforo.prioridad || b.real - a.real);
+    html += `<div class="subtitulo">Cumplimiento de presupuesto</div><div class="tarjeta">`;
+    if (relevantes.length === 0) {
+      html += `<div class="fila-cuenta"><span>Sin presupuestos definidos este mes</span></div>`;
+    } else {
+      html += `<table class="tabla-datos"><thead><tr><th></th><th>Categoría</th><th class="num">Presupuesto</th><th class="num">Real</th></tr></thead><tbody>`;
+      relevantes.forEach(c => {
+        html += `<tr><td class="semaforo-icono">${c.semaforo.icono}</td><td>${c.nombre}<br><span style="font-size:11px;color:var(--texto-suave);">${c.semaforo.texto}</span></td>
+                  <td class="num">${c.presupuestado>0?formatoMoneda(c.presupuestado):"—"}</td><td class="num">${formatoMoneda(c.real)}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
 
     const grupos = agruparCuentas(cuentas.filter(c => c.Estado === "Activo" || !c.Estado));
     html += `<div class="subtitulo">Saldo por cuenta</div>`;
