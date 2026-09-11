@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Finanzas Personales</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finanzas">
+<meta name="theme-color" content="#1F4E78">
 <script>
   // Muestra cualquier error de JavaScript en pantalla, para poder depurar desde el celular sin consola.
   window.addEventListener("error", (e) => {
@@ -94,6 +101,19 @@
   .barra-mini{height:6px;background:#eef1f4;border-radius:3px;margin-top:4px;overflow:hidden;}
   .barra-mini .relleno-mini{height:100%;background:var(--azul-claro);}
   .semaforo-icono{font-size:14px;}
+  .mov-item{padding:12px 0;border-bottom:1px solid var(--borde);}
+  .mov-item:last-child{border-bottom:none;}
+  .mov-top{display:flex;justify-content:space-between;align-items:center;}
+  .mov-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.02em;}
+  .mov-badge.Ingreso{background:#e8f5e9;color:var(--verde);}
+  .mov-badge.Gasto{background:#fdecea;color:var(--rojo);}
+  .mov-badge.Transferencia{background:#e3f2fd;color:#1565c0;}
+  .mov-badge.CompraUSD, .mov-badge.VentaUSD{background:#fff3e0;color:#e65100;}
+  .mov-badge.PagoDeuda{background:#f3e5f5;color:#6a1b9a;}
+  .mov-badge.ActualizacionValor{background:#eceff1;color:#37474f;}
+  .mov-monto{font-weight:700;font-size:15px;}
+  .mov-detalle{font-size:12px;color:var(--texto-suave);margin-top:4px;}
+  .mov-fecha{font-size:11px;color:var(--texto-suave);}
 </style>
 </head>
 <body>
@@ -114,6 +134,7 @@
   <nav class="tabs">
     <button data-tab="registrar" class="activo">Registrar</button>
     <button data-tab="consultar">Consultar</button>
+    <button data-tab="historial">Historial</button>
   </nav>
 
   <!-- ===== TAB REGISTRAR ===== -->
@@ -202,6 +223,15 @@
       <div class="estado-carga">Cargando...</div>
     </div>
   </section>
+
+  <!-- ===== TAB HISTORIAL ===== -->
+  <section id="tab-historial" class="tab">
+    <button class="refrescar" id="btn-refrescar-historial">↻ Actualizar</button>
+    <div class="subtitulo" style="margin-top:0;">Últimos 20 movimientos</div>
+    <div id="historial-contenido">
+      <div class="estado-carga">Cargando...</div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -232,6 +262,7 @@ let driveItemId = null;
 
 // Caché en memoria de catálogos
 let catCuentas = [], catCategorias = [], catSubcategorias = [], catDeudas = [];
+let mapaCuentas = {}, mapaCategorias = {}, mapaSubcategorias = {};
 
 // ================== AUTENTICACIÓN ==================
 document.getElementById("btn-login").addEventListener("click", () => {
@@ -315,6 +346,9 @@ async function iniciarApp() {
     localStorage.setItem("driveItemId_" + NOMBRE_ARCHIVO, driveItemId);
 
     await Promise.all([cargarCuentas(), cargarCategorias(), cargarSubcategorias(), cargarDeudas()]);
+    catCuentas.forEach(c => mapaCuentas[c.CuentaID] = c.Nombre);
+    catCategorias.forEach(c => mapaCategorias[c.CategoriaID] = c.Nombre);
+    catSubcategorias.forEach(c => mapaSubcategorias[c.SubcategoriaID] = c.Nombre);
     poblarSelects();
     actualizarOpcionesPorTipo("");
     await cargarConsulta();
@@ -510,6 +544,7 @@ document.querySelectorAll("nav.tabs button").forEach(btn => {
     document.querySelectorAll("section.tab").forEach(s => s.classList.remove("activo"));
     btn.classList.add("activo");
     document.getElementById("tab-" + btn.dataset.tab).classList.add("activo");
+    if (btn.dataset.tab === "historial") cargarHistorial();
   });
 });
 
@@ -806,6 +841,71 @@ function dibujarGraficoComposicion(grupos, trm) {
     await iniciarApp();
   }
 })();
+
+// ================== TAB HISTORIAL ==================
+function parsearFechaExcel(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") {
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    return new Date(ms);
+  }
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+function formatoFechaCorta(d) {
+  if (!d) return "";
+  return d.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
+}
+
+document.getElementById("btn-refrescar-historial").addEventListener("click", cargarHistorial);
+
+async function cargarHistorial() {
+  const cont = document.getElementById("historial-contenido");
+  cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
+  try {
+    const filas = (await leerTabla("tbl_Movimientos")).filter(f => f.Fecha);
+
+    filas.forEach(f => f._fechaParseada = parsearFechaExcel(f.Fecha));
+    filas.sort((a, b) => (b._fechaParseada || 0) - (a._fechaParseada || 0));
+    const ultimos = filas.slice(0, 20);
+
+    if (ultimos.length === 0) {
+      cont.innerHTML = '<div class="estado-carga">Aún no has registrado movimientos.</div>';
+      return;
+    }
+
+    let html = '<div class="tarjeta">';
+    ultimos.forEach(f => {
+      const nombreOrigen = mapaCuentas[f.CuentaOrigen] || f.CuentaOrigen || "";
+      const nombreDestino = mapaCuentas[f.CuentaDestino] || f.CuentaDestino || "";
+      let cuentasTexto = "";
+      if (nombreOrigen && nombreDestino) cuentasTexto = `${nombreOrigen} → ${nombreDestino}`;
+      else cuentasTexto = nombreOrigen || nombreDestino || "";
+
+      let categoriaTexto = "";
+      if (f.SubcategoriaID) categoriaTexto = mapaSubcategorias[f.SubcategoriaID] || f.SubcategoriaID;
+      else if (f.CategoriaID) categoriaTexto = mapaCategorias[f.CategoriaID] || f.CategoriaID;
+
+      const detalles = [cuentasTexto, categoriaTexto, f.Descripcion].filter(Boolean).join(" · ");
+      const esNegativo = f.TipoMovimiento === "Gasto" || f.TipoMovimiento === "PagoDeuda";
+
+      html += `
+        <div class="mov-item">
+          <div class="mov-top">
+            <span class="mov-badge ${f.TipoMovimiento || ""}">${f.TipoMovimiento || "—"}</span>
+            <span class="mov-monto ${esNegativo ? "negativo" : ""}">${esNegativo ? "-" : ""}${formatoMoneda(f.Monto)} ${f.Moneda || ""}</span>
+          </div>
+          <div class="mov-detalle">${detalles || "—"}</div>
+          <div class="mov-fecha">${formatoFechaCorta(f._fechaParseada)}</div>
+        </div>`;
+    });
+    html += "</div>";
+    cont.innerHTML = html;
+  } catch (e) {
+    cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
+    console.error(e);
+  }
+}
 </script>
 </body>
 </html>
