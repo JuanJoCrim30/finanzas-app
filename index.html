@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Finanzas">
+<meta name="apple-mobile-web-app-title" content="Finanzas JuanJo">
 <meta name="theme-color" content="#1F4E78">
 <script>
   // Muestra cualquier error de JavaScript en pantalla, para poder depurar desde el celular sin consola.
@@ -70,7 +70,7 @@
   .refrescar{background:none;border:1px solid var(--borde);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--azul-claro);float:right;}
   .filtro-mes{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
   .filtro-mes label{display:block;font-size:12px;color:var(--texto-suave);margin-bottom:4px;}
-  .filtro-mes input{padding:9px;border:1px solid var(--borde);border-radius:8px;font-size:14px;}
+  .filtro-mes input, .filtro-mes select{padding:9px;border:1px solid var(--borde);border-radius:8px;font-size:14px;background:#fff;}
   .btn-secundario{background:var(--azul-claro);color:#fff;border:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;}
   .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;}
   .kpi-grid .tarjeta{margin-bottom:0;padding:12px;}
@@ -214,7 +214,7 @@
     <div class="filtro-mes">
       <div>
         <label>Mes a analizar</label>
-        <input type="month" id="filtro-mes">
+        <select id="filtro-mes"></select>
       </div>
       <button id="btn-aplicar-mes" class="btn-secundario">Aplicar</button>
       <button class="refrescar" id="btn-refrescar" style="margin-left:auto;">↻</button>
@@ -259,6 +259,7 @@ try {
 }
 let cuentaActiva = null;
 let driveItemId = null;
+let filtroMesInicializado = false;
 
 // Caché en memoria de catálogos
 let catCuentas = [], catCategorias = [], catSubcategorias = [], catDeudas = [];
@@ -310,10 +311,25 @@ async function graphFetch(path, options = {}) {
 }
 
 // ================== ARRANQUE DE LA APP ==================
+function poblarFiltroMes() {
+  const sel = document.getElementById("filtro-mes");
+  const meses3 = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const hoy = new Date();
+  let html = "";
+  for (let i = 0; i < 25; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const valor = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    const etiqueta = `${meses3[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+    html += `<option value="${valor}">${etiqueta}</option>`;
+  }
+  sel.innerHTML = html;
+}
+
 async function iniciarApp() {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("app-screen").style.display = "block";
   document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
+  poblarFiltroMes();
 
   try {
     // Intento 1: acceso directo por ruta (más rápido y confiable que la búsqueda)
@@ -653,8 +669,9 @@ async function cargarConsulta() {
       nombre, presupuestado: num(presupuestado) || 0, real: num(real) || 0
     }));
 
-    if (!document.getElementById("filtro-mes").value) {
+    if (!filtroMesInicializado) {
       document.getElementById("filtro-mes").value = mesActual;
+      filtroMesInicializado = true;
     }
 
     const patrimonio = num(resumen.PatrimonioNeto);
