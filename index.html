@@ -19,6 +19,7 @@
   }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <style>
   :root{
     --azul:#1F4E78; --azul-claro:#2E75B6; --verde:#2e7d32; --rojo:#c62828;
@@ -75,7 +76,16 @@
   .barra-progreso .relleno.alerta{background:#ef5350;}
   .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
-  #grafico-composicion{max-width:220px;margin:0 auto;display:block;}
+  #grafico-composicion{max-width:230px;margin:0 auto;display:block;}
+  .acordeon{border:1px solid var(--borde);border-radius:10px;overflow:hidden;margin-bottom:10px;background:#fff;}
+  .acordeon-header{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;background:none;border:none;text-align:left;cursor:pointer;}
+  .acordeon-header .titulo{font-weight:700;color:var(--azul);font-size:14px;}
+  .acordeon-header .subtotal{font-size:13px;color:var(--texto-suave);margin-left:auto;margin-right:8px;text-align:right;}
+  .acordeon-header .flecha{transition:transform .15s;color:var(--texto-suave);}
+  .acordeon-header.abierto .flecha{transform:rotate(180deg);}
+  .acordeon-contenido{padding:0 14px;}
+  .acordeon-contenido.oculto{display:none;}
+  .acordeon-contenido .fila-cuenta{padding:9px 0;}
 </style>
 </head>
 <body>
@@ -298,6 +308,7 @@ async function iniciarApp() {
 
     await Promise.all([cargarCuentas(), cargarCategorias(), cargarSubcategorias(), cargarDeudas()]);
     poblarSelects();
+    actualizarOpcionesPorTipo("");
     await cargarConsulta();
   } catch (e) {
     mostrarMensajeRegistro("err", "Error al cargar datos: " + e.message);
@@ -334,20 +345,36 @@ async function cargarDeudas() {
 }
 
 function poblarSelects() {
-  const selOrigen = document.getElementById("f-origen");
-  const selDestino = document.getElementById("f-destino");
-  catCuentas.forEach(c => {
-    selOrigen.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`;
-    selDestino.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`;
-  });
-  const selCat = document.getElementById("f-categoria");
-  catCategorias.forEach(c => {
-    selCat.innerHTML += `<option value="${c.CategoriaID}">${c.Nombre}</option>`;
-  });
   const selDeuda = document.getElementById("f-deuda");
   catDeudas.forEach(d => {
     selDeuda.innerHTML += `<option value="${d.DeudaID}">${d.Nombre}</option>`;
   });
+}
+
+// Repuebla Cuenta origen / Cuenta destino / Categoría según el tipo de movimiento elegido
+function actualizarOpcionesPorTipo(tipo) {
+  const selOrigen = document.getElementById("f-origen");
+  const selDestino = document.getElementById("f-destino");
+  const selCategoria = document.getElementById("f-categoria");
+
+  // Cuentas para "Cuenta origen": todas las activas (ActualizacionValor no usa este campo, se oculta)
+  selOrigen.innerHTML = '<option value="">Selecciona...</option>';
+  catCuentas.forEach(c => selOrigen.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`);
+
+  // Cuentas para "Cuenta destino": si es ActualizacionValor, solo cuentas con rendimiento pasivo
+  // (Tyba, cuentas de alta rentabilidad, fondos) — las que realmente necesitas "chequear" cada mes.
+  const cuentasDestino = tipo === "ActualizacionValor"
+    ? catCuentas.filter(c => c.ComportamientoSaldo === "RendimientoPasivo")
+    : catCuentas;
+  selDestino.innerHTML = '<option value="">Selecciona...</option>';
+  cuentasDestino.forEach(c => selDestino.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`);
+
+  // Categorías: solo las del tipo que corresponde (Gasto o Ingreso)
+  selCategoria.innerHTML = '<option value="">Selecciona...</option>';
+  catCategorias.filter(c => c.TipoCategoria === tipo).forEach(c => {
+    selCategoria.innerHTML += `<option value="${c.CategoriaID}">${c.Nombre}</option>`;
+  });
+  actualizarSubcategorias();
 }
 
 function actualizarSubcategorias() {
@@ -364,12 +391,13 @@ document.getElementById("f-categoria").addEventListener("change", actualizarSubc
 document.getElementById("f-tipo").addEventListener("change", (e) => {
   const tipo = e.target.value;
   const show = (id, cond) => document.getElementById(id).classList.toggle("oculto", !cond);
-  show("c-origen", tipo !== "Ingreso" && tipo !== "");
+  show("c-origen", tipo !== "Ingreso" && tipo !== "ActualizacionValor" && tipo !== "");
   show("c-destino", tipo !== "Gasto" && tipo !== "PagoDeuda" && tipo !== "");
   show("c-trm", tipo === "CompraUSD" || tipo === "VentaUSD");
   show("c-categoria", tipo === "Gasto" || tipo === "Ingreso");
   show("c-subcategoria", tipo === "Gasto");
   show("c-deuda", tipo === "PagoDeuda");
+  actualizarOpcionesPorTipo(tipo);
 });
 
 // ================== ENVÍO DEL FORMULARIO ==================
@@ -416,6 +444,7 @@ document.getElementById("form-movimiento").addEventListener("submit", async (e) 
     );
     document.getElementById("c-origen").classList.remove("oculto");
     document.getElementById("c-destino").classList.remove("oculto");
+    actualizarOpcionesPorTipo("");
   } catch (err) {
     mostrarMensajeRegistro("err", "No se pudo guardar: " + err.message);
     console.error(err);
@@ -458,7 +487,6 @@ function formatoPorcentaje(n) {
   return (n * 100).toFixed(1) + "%";
 }
 const ORDEN_TIPO = ["Efectivo","Ahorros","CuentaRemunerada","CDT","FondoInversion","TarjetaCredito"];
-const ORDEN_MONEDA = ["COP","USD","EUR"];
 function agruparCuentas(cuentas) {
   const grupos = {};
   cuentas.forEach(c => {
@@ -470,13 +498,18 @@ function agruparCuentas(cuentas) {
     const ia = ORDEN_TIPO.indexOf(a), ib = ORDEN_TIPO.indexOf(b);
     return (ia===-1?99:ia) - (ib===-1?99:ib);
   });
-  return tipos.map(tipo => ({
-    tipo,
-    cuentas: grupos[tipo].sort((a,b) => {
-      const ia = ORDEN_MONEDA.indexOf(a.Moneda), ib = ORDEN_MONEDA.indexOf(b.Moneda);
-      return (ia===-1?99:ia) - (ib===-1?99:ib);
-    })
-  }));
+  return tipos.map(tipo => {
+    const cuentasGrupo = grupos[tipo].slice().sort((a,b) => (num(b.SaldoActual)||0) - (num(a.SaldoActual)||0));
+    const subtotales = {};
+    cuentasGrupo.forEach(c => {
+      const m = c.Moneda || "?";
+      subtotales[m] = (subtotales[m] || 0) + (num(c.SaldoActual) || 0);
+    });
+    return { tipo, cuentas: cuentasGrupo, subtotales };
+  });
+}
+function textoSubtotal(subtotales) {
+  return Object.entries(subtotales).map(([m,v]) => `${formatoMoneda(v)} ${m}`).join(" + ");
 }
 const NOMBRE_TIPO = {
   Efectivo: "Efectivo", Ahorros: "Ahorros", CuentaRemunerada: "Cuentas remuneradas",
@@ -573,12 +606,19 @@ async function cargarConsulta() {
 
     const grupos = agruparCuentas(cuentas.filter(c => c.Estado === "Activo" || !c.Estado));
     html += `<div class="subtitulo">Saldo por cuenta</div>`;
-    grupos.forEach(g => {
-      html += `<div class="grupo-cuenta-titulo">${NOMBRE_TIPO[g.tipo] || g.tipo}</div><div class="tarjeta">`;
+    grupos.forEach((g, i) => {
+      html += `
+        <div class="acordeon">
+          <button type="button" class="acordeon-header" data-idx="${i}">
+            <span class="titulo">${NOMBRE_TIPO[g.tipo] || g.tipo}</span>
+            <span class="subtotal">${textoSubtotal(g.subtotales)}</span>
+            <span class="flecha">▾</span>
+          </button>
+          <div class="acordeon-contenido oculto" id="acordeon-${i}">`;
       g.cuentas.forEach(c => {
         html += `<div class="fila-cuenta"><span class="nombre">${c.Nombre}</span><span class="saldo">${formatoMoneda(c.SaldoActual)} ${c.Moneda||""}</span></div>`;
       });
-      html += `</div>`;
+      html += `</div></div>`;
     });
 
     html += `<div class="subtitulo">Deudas activas</div><div class="tarjeta">`;
@@ -592,14 +632,21 @@ async function cargarConsulta() {
     html += `</div>`;
 
     cont.innerHTML = html;
-    dibujarGraficoComposicion(grupos);
+    document.querySelectorAll(".acordeon-header").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const contenido = document.getElementById("acordeon-" + btn.dataset.idx);
+        contenido.classList.toggle("oculto");
+        btn.classList.toggle("abierto");
+      });
+    });
+    dibujarGraficoComposicion(grupos, num(resumen.TRMDelDia) || 0);
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
   }
 }
 
-function dibujarGraficoComposicion(grupos) {
+function dibujarGraficoComposicion(grupos, trm) {
   const canvas = document.getElementById("grafico-composicion");
   if (!canvas) return;
   if (typeof Chart === "undefined") {
@@ -608,18 +655,40 @@ function dibujarGraficoComposicion(grupos) {
     }));
     return;
   }
-  // Nota: suma cuentas en distinta moneda tal cual (sin convertir a COP); es una aproximación visual
-  // de qué tan repartido está tu dinero entre tipos de cuenta, no un valor exacto en una sola moneda.
-  const etiquetas = grupos.map(g => NOMBRE_TIPO[g.tipo] || g.tipo);
-  const valores = grupos.map(g => g.cuentas.reduce((s,c) => s + (num(c.SaldoActual) || 0), 0));
+  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
+
+  // Excluye tarjetas de crédito (son deuda, no activo) y convierte USD a COP con la TRM del día
+  // para que las porciones representen valor real, no cantidades numéricas de distinta moneda mezcladas.
+  const gruposActivos = grupos.filter(g => g.tipo !== "TarjetaCredito");
+  const etiquetas = gruposActivos.map(g => NOMBRE_TIPO[g.tipo] || g.tipo);
+  const valores = gruposActivos.map(g => g.cuentas.reduce((s, c) => {
+    const saldo = num(c.SaldoActual) || 0;
+    const enCOP = c.Moneda === "USD" ? saldo * trm : saldo;
+    return s + enCOP;
+  }, 0));
+  const total = valores.reduce((a,b) => a+b, 0);
+
   if (chartComposicion) chartComposicion.destroy();
   chartComposicion = new Chart(canvas, {
     type: "doughnut",
     data: {
       labels: etiquetas,
-      datasets: [{ data: valores, backgroundColor: ["#2E75B6","#1F4E78","#66bb6a","#ffa726","#ab47bc","#78909c"] }]
+      datasets: [{ data: valores, backgroundColor: ["#2E75B6","#1F4E78","#66bb6a","#ffa726","#ab47bc","#78909c"], borderWidth: 2, borderColor: "#fff" }]
     },
-    options: { plugins: { legend: { position: "bottom", labels: { font: { size: 11 } } } } }
+    options: {
+      plugins: {
+        legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
+        datalabels: {
+          color: "#fff",
+          font: { weight: "bold", size: 11 },
+          formatter: (v) => total > 0 ? (v/total*100).toFixed(0) + "%" : "",
+          display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0
+        },
+        tooltip: {
+          callbacks: { label: (ctx) => ` ${ctx.label}: ${formatoMoneda(ctx.raw)} COP` }
+        }
+      }
+    }
   });
 }
 
