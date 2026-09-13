@@ -84,6 +84,7 @@
   .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion{max-width:230px;margin:0 auto;display:block;}
+  #grafico-distribucion-gastos{max-width:260px;margin:0 auto;display:block;}
   .acordeon{border:1px solid var(--borde);border-radius:10px;overflow:hidden;margin-bottom:10px;background:#fff;}
   .acordeon-header{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;background:none;border:none;text-align:left;cursor:pointer;}
   .acordeon-header .titulo{font-weight:700;color:var(--azul);font-size:14px;}
@@ -595,6 +596,7 @@ const NOMBRE_TIPO = {
 };
 
 let chartComposicion = null;
+let chartDistribucionGastos = null;
 
 async function leerRangoDashboard(direccion) {
   const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
@@ -646,7 +648,7 @@ async function cargarConsulta() {
       leerTabla("tbl_Cuentas"),
       leerTabla("tbl_Deudas"),
       leerCeldaDashboard("B6"),
-      leerRangoDashboard("G5:I16")
+      leerRangoDashboard("G5:I34")
     ]);
     const resumen = filasResumen[0] || {};
     const deudas = deudasTodas.filter(d => d.Estado === "Activa");
@@ -702,19 +704,19 @@ async function cargarConsulta() {
     // ---- Distribución de gastos del mes ----
     const conGasto = categorias.filter(c => c.real > 0).sort((a,b) => b.real - a.real);
     const totalGastoMes = conGasto.reduce((s,c) => s + c.real, 0);
-    html += `<div class="subtitulo">Distribución de gastos del mes</div><div class="tarjeta">`;
+    html += `<div class="subtitulo">Distribución de gastos del mes</div>`;
     if (conGasto.length === 0) {
-      html += `<div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div>`;
+      html += `<div class="tarjeta"><div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div></div>`;
     } else {
-      html += `<table class="tabla-datos"><thead><tr><th>Categoría</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
+      html += `<div class="tarjeta"><canvas id="grafico-distribucion-gastos" height="220"></canvas></div>`;
+      html += `<div class="tarjeta"><table class="tabla-datos"><thead><tr><th>Categoría</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
       conGasto.forEach(c => {
         const pct = totalGastoMes > 0 ? (c.real/totalGastoMes*100) : 0;
         html += `<tr><td>${c.nombre}<div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div></td>
                   <td class="num">${formatoMoneda(c.real)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
       });
-      html += `</tbody></table>`;
+      html += `</tbody></table></div>`;
     }
-    html += `</div>`;
 
     // ---- Cumplimiento de presupuesto (semáforo) ----
     const relevantes = categorias
@@ -725,10 +727,12 @@ async function cargarConsulta() {
     if (relevantes.length === 0) {
       html += `<div class="fila-cuenta"><span>Sin presupuestos definidos este mes</span></div>`;
     } else {
-      html += `<table class="tabla-datos"><thead><tr><th></th><th>Categoría</th><th class="num">Presupuesto</th><th class="num">Real</th></tr></thead><tbody>`;
+      html += `<table class="tabla-datos"><thead><tr><th></th><th>Categoría</th><th class="num">Presup.</th><th class="num">Real</th><th class="num">% usado</th></tr></thead><tbody>`;
       relevantes.forEach(c => {
+        const pctEjecutado = c.presupuestado > 0 ? c.real / c.presupuestado : null;
         html += `<tr><td class="semaforo-icono">${c.semaforo.icono}</td><td>${c.nombre}<br><span style="font-size:11px;color:var(--texto-suave);">${c.semaforo.texto}</span></td>
-                  <td class="num">${c.presupuestado>0?formatoMoneda(c.presupuestado):"—"}</td><td class="num">${formatoMoneda(c.real)}</td></tr>`;
+                  <td class="num">${c.presupuestado>0?formatoMoneda(c.presupuestado):"—"}</td><td class="num">${formatoMoneda(c.real)}</td>
+                  <td class="num">${formatoPorcentaje(pctEjecutado)}</td></tr>`;
       });
       html += `</tbody></table>`;
     }
@@ -770,10 +774,41 @@ async function cargarConsulta() {
       });
     });
     dibujarGraficoComposicion(grupos, num(resumen.TRMDelDia) || 0);
+    dibujarGraficoDistribucionGastos(conGasto);
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
   }
+}
+
+function dibujarGraficoDistribucionGastos(conGasto) {
+  const canvas = document.getElementById("grafico-distribucion-gastos");
+  if (!canvas) return; // no se dibuja si no hay gastos ese mes (no se insertó el canvas)
+  if (typeof Chart === "undefined") return;
+  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
+
+  const total = conGasto.reduce((s,c) => s + c.real, 0);
+  const paleta = ["#2E75B6","#1F4E78","#66bb6a","#ffa726","#ab47bc","#78909c","#ef5350","#26a69a","#8d6e63","#5c6bc0","#d4e157","#ff7043"];
+
+  if (chartDistribucionGastos) chartDistribucionGastos.destroy();
+  chartDistribucionGastos = new Chart(canvas, {
+    type: "pie",
+    data: {
+      labels: conGasto.map(c => c.nombre),
+      datasets: [{ data: conGasto.map(c => c.real), backgroundColor: paleta, borderWidth: 2, borderColor: "#fff" }]
+    },
+    options: {
+      plugins: {
+        legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
+        datalabels: {
+          color: "#fff", font: { weight: "bold", size: 10 },
+          formatter: (v) => total > 0 ? (v/total*100).toFixed(0) + "%" : "",
+          display: (ctx) => ctx.dataset.data[ctx.dataIndex] / total > 0.04 // oculta % en porciones muy pequeñas (se amontonan)
+        },
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatoMoneda(ctx.raw)}` } }
+      }
+    }
+  });
 }
 
 function dibujarGraficoComposicion(grupos, trm) {
@@ -848,9 +883,17 @@ function dibujarGraficoComposicion(grupos, trm) {
 function parsearFechaExcel(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") {
-    const ms = Math.round((v - 25569) * 86400 * 1000);
-    return new Date(ms);
+    // Excel: serie 0 = 1899-12-30. Extraemos año/mes/día en UTC (donde la aritmética de días es exacta)
+    // y reconstruimos como fecha LOCAL con esos mismos números — así evitamos que la resta de horas
+    // de la zona horaria (ej. Colombia UTC-5) recorra la fecha al día anterior al mostrarla.
+    const utcDias = Math.round(v) - 25569;
+    const fechaUTC = new Date(utcDias * 86400000);
+    return new Date(fechaUTC.getUTCFullYear(), fechaUTC.getUTCMonth(), fechaUTC.getUTCDate());
   }
+  // Para strings tipo "2026-09-01": los partimos a mano en vez de new Date(string), que los interpreta
+  // como medianoche UTC y sufre el mismo corrimiento de un día en zonas horarias negativas.
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
