@@ -65,12 +65,12 @@
   .fila-cuenta:last-child{border-bottom:none;}
   .fila-cuenta .nombre{font-weight:600;}
   .fila-cuenta .saldo{font-weight:600;}
-  .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;}
+  .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;text-align:center;}
   .estado-carga{text-align:center;padding:30px;color:var(--texto-suave);}
   .refrescar{background:none;border:1px solid var(--borde);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--azul-claro);float:right;}
   .filtro-mes{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
   .filtro-mes label{display:block;font-size:12px;color:var(--texto-suave);margin-bottom:4px;}
-  .filtro-mes input, .filtro-mes select{padding:9px;border:1px solid var(--borde);border-radius:8px;font-size:14px;background:#fff;min-width:155px;}
+  .filtro-mes input, .filtro-mes select{padding:9px;border:1px solid var(--borde);border-radius:8px;font-size:14px;background:#fff;min-width:190px;}
   .btn-secundario{background:var(--azul-claro);color:#fff;border:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;}
   .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;}
   .kpi-grid .tarjeta{margin-bottom:0;padding:12px;}
@@ -83,8 +83,7 @@
   .barra-progreso .relleno.alerta{background:#ef5350;}
   .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
-  #grafico-composicion{max-width:230px;margin:0 auto;display:block;}
-  #grafico-distribucion-gastos{max-width:260px;margin:0 auto;display:block;}
+  #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
   .acordeon{border:1px solid var(--borde);border-radius:10px;overflow:hidden;margin-bottom:10px;background:#fff;}
   .acordeon-header{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;background:none;border:none;text-align:left;cursor:pointer;}
   .acordeon-header .titulo{font-weight:700;color:var(--azul);font-size:14px;}
@@ -95,7 +94,7 @@
   .acordeon-contenido.oculto{display:none;}
   .acordeon-contenido .fila-cuenta{padding:9px 0;}
   table.tabla-datos{width:100%;border-collapse:collapse;font-size:13px;}
-  table.tabla-datos th{text-align:left;font-size:11px;color:var(--texto-suave);text-transform:uppercase;padding-bottom:6px;border-bottom:1px solid var(--borde);}
+  table.tabla-datos th{text-align:center;font-size:11px;color:var(--texto-suave);text-transform:uppercase;padding-bottom:6px;border-bottom:1px solid var(--borde);}
   table.tabla-datos td{padding:8px 4px;border-bottom:1px solid var(--borde);}
   table.tabla-datos tr:last-child td{border-bottom:none;}
   table.tabla-datos td.num{text-align:right;font-variant-numeric:tabular-nums;}
@@ -696,7 +695,7 @@ async function cargarConsulta() {
       </div>
 
       <div class="tarjeta">
-        <div class="etiqueta" style="margin-bottom:8px;">Composición de activos</div>
+        <div class="etiqueta" style="margin-bottom:8px;text-align:center;">Composición de activos</div>
         <canvas id="grafico-composicion" height="200"></canvas>
       </div>
     `;
@@ -708,7 +707,7 @@ async function cargarConsulta() {
     if (conGasto.length === 0) {
       html += `<div class="tarjeta"><div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div></div>`;
     } else {
-      html += `<div class="tarjeta"><canvas id="grafico-distribucion-gastos" height="220"></canvas></div>`;
+      html += `<div class="tarjeta"><canvas id="grafico-distribucion-gastos" height="200"></canvas></div>`;
       html += `<div class="tarjeta"><table class="tabla-datos"><thead><tr><th>Categoría</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
       conGasto.forEach(c => {
         const pct = totalGastoMes > 0 ? (c.real/totalGastoMes*100) : 0;
