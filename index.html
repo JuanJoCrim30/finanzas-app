@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Finanzas JuanJo">
-<meta name="theme-color" content="#3C096C">
+<meta name="theme-color" content="#240046">
 <script>
   // Muestra cualquier error de JavaScript en pantalla, para poder depurar desde el celular sin consola.
   window.addEventListener("error", (e) => {
@@ -29,7 +29,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <style>
   :root{
-    --azul:#3C096C; --azul-claro:#7B2CBF; --verde:#2e7d32; --rojo:#c62828;
+    --azul:#240046; --azul-claro:#5A189A; --verde:#2e7d32; --rojo:#c62828;
     --fondo:#f4f6f8; --tarjeta:#ffffff; --texto:#1a1a1a; --texto-suave:#6b7280;
     --borde:#e2e5ea;
   }
@@ -800,7 +800,6 @@ async function cargarConsulta() {
     const tendencia = filasTendencia
       .map(([mes, ingreso, gasto]) => ({ mes, gasto: num(gasto) || 0 }))
       .filter(t => t.mes);
-    dibujarGraficoTendenciaGastos(tendencia);
 
     document.querySelectorAll(".toggle-btn").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -809,9 +808,9 @@ async function cargarConsulta() {
         const esMes = btn.dataset.vista === "mes";
         document.getElementById("vista-gasto-mes").classList.toggle("oculto", !esMes);
         document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", esMes);
-        // Chart.js calcula el tamaño del canvas al crearlo; si estaba oculto (display:none) quedó en 0x0.
-        // Al mostrarlo, forzamos que recalcule su tamaño real.
-        if (!esMes && chartTendenciaGastos) chartTendenciaGastos.resize();
+        // El gráfico se crea recién ahora, con el contenedor ya visible — Chart.js necesita
+        // medir un tamaño real al momento de crearlo, no funciona bien si nace oculto (0x0).
+        if (!esMes) dibujarGraficoTendenciaGastos(tendencia);
       });
     });
   } catch (e) {
@@ -827,7 +826,7 @@ function dibujarGraficoDistribucionGastos(conGasto) {
   if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   const total = conGasto.reduce((s,c) => s + c.real, 0);
-  const paleta = ["#7B2CBF","#3C096C","#66bb6a","#ffa726","#ab47bc","#78909c","#ef5350","#26a69a","#8d6e63","#5c6bc0","#d4e157","#ff7043"];
+  const paleta = ["#5A189A","#240046","#66bb6a","#ffa726","#ab47bc","#78909c","#ef5350","#26a69a","#8d6e63","#5c6bc0","#d4e157","#ff7043"];
 
   if (chartDistribucionGastos) chartDistribucionGastos.destroy();
   chartDistribucionGastos = new Chart(canvas, {
@@ -908,7 +907,7 @@ function dibujarGraficoComposicion(grupos, trm) {
     type: "doughnut",
     data: {
       labels: etiquetas,
-      datasets: [{ data: valores, backgroundColor: ["#7B2CBF","#3C096C","#66bb6a","#ffa726","#ab47bc","#78909c"], borderWidth: 2, borderColor: "#fff" }]
+      datasets: [{ data: valores, backgroundColor: ["#5A189A","#240046","#66bb6a","#ffa726","#ab47bc","#78909c"], borderWidth: 2, borderColor: "#fff" }]
     },
     options: {
       plugins: {
