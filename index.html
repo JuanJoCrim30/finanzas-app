@@ -351,7 +351,7 @@ async function iniciarApp() {
     catCategorias.forEach(c => mapaCategorias[c.CategoriaID] = c.Nombre);
     catSubcategorias.forEach(c => mapaSubcategorias[c.SubcategoriaID] = c.Nombre);
     poblarSelects();
-    actualizarOpcionesPorTipo("");
+    actualizarVisibilidadCampos();
     await cargarConsulta();
   } catch (e) {
     mostrarMensajeRegistro("err", "Error al cargar datos: " + e.message);
@@ -430,18 +430,24 @@ function actualizarSubcategorias() {
 }
 document.getElementById("f-categoria").addEventListener("change", actualizarSubcategorias);
 
-// ================== FORMULARIO INTELIGENTE (mostrar/ocultar por tipo) ==================
-document.getElementById("f-tipo").addEventListener("change", (e) => {
-  const tipo = e.target.value;
+// ================== FORMULARIO INTELIGENTE (mostrar/ocultar por tipo y moneda) ==================
+function actualizarVisibilidadCampos() {
+  const tipo = document.getElementById("f-tipo").value;
+  const moneda = document.getElementById("f-moneda").value;
   const show = (id, cond) => document.getElementById(id).classList.toggle("oculto", !cond);
   show("c-origen", tipo !== "Ingreso" && tipo !== "ActualizacionValor" && tipo !== "");
   show("c-destino", tipo !== "Gasto" && tipo !== "PagoDeuda" && tipo !== "");
-  show("c-trm", tipo === "CompraUSD" || tipo === "VentaUSD");
+  // TRM: siempre para Compra/Venta de USD; además para Gasto/Ingreso cuando la moneda es USD
+  // (para poder convertir ese movimiento a COP en los análisis, sin mezclar monedas).
+  show("c-trm", tipo === "CompraUSD" || tipo === "VentaUSD" ||
+                ((tipo === "Gasto" || tipo === "Ingreso") && moneda === "USD"));
   show("c-categoria", tipo === "Gasto" || tipo === "Ingreso");
   show("c-subcategoria", tipo === "Gasto");
   show("c-deuda", tipo === "PagoDeuda");
   actualizarOpcionesPorTipo(tipo);
-});
+}
+document.getElementById("f-tipo").addEventListener("change", actualizarVisibilidadCampos);
+document.getElementById("f-moneda").addEventListener("change", actualizarVisibilidadCampos);
 
 // ================== VALIDACIÓN DEL FORMULARIO ==================
 function validarFormulario(tipo) {
@@ -505,7 +511,8 @@ document.getElementById("form-movimiento").addEventListener("submit", async (e) 
       val("f-deuda"),                         // L DeudaID
       val("f-descripcion") || "",             // M Descripcion
       null, null, null, null,                 // N,O,P,Q (fórmulas)
-      (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())) // R RegistroID
+      (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), // R RegistroID
+      null, null                              // S,T MontoCOP / ImpactoDestinoCOP (fórmulas)
     ];
 
     await graphFetch(`/me/drive/items/${driveItemId}/workbook/tables('tbl_Movimientos')/rows/add`, {
@@ -516,12 +523,7 @@ document.getElementById("form-movimiento").addEventListener("submit", async (e) 
     mostrarMensajeRegistro("ok", "Movimiento registrado ✓");
     e.target.reset();
     document.getElementById("f-fecha").value = new Date().toISOString().split("T")[0];
-    ["c-trm", "c-categoria", "c-subcategoria", "c-deuda"].forEach(id =>
-      document.getElementById(id).classList.add("oculto")
-    );
-    document.getElementById("c-origen").classList.remove("oculto");
-    document.getElementById("c-destino").classList.remove("oculto");
-    actualizarOpcionesPorTipo("");
+    actualizarVisibilidadCampos();
   } catch (err) {
     mostrarMensajeRegistro("err", "No se pudo guardar: " + err.message);
     console.error(err);
