@@ -84,6 +84,10 @@
   .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
+  #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
+  .toggle-vista{display:flex;gap:6px;margin-bottom:10px;}
+  .toggle-btn{flex:1;padding:9px;border:1px solid var(--borde);border-radius:8px;background:#fff;font-size:13px;font-weight:600;color:var(--texto-suave);}
+  .toggle-btn.activo{background:var(--azul-claro);color:#fff;border-color:var(--azul-claro);}
   .acordeon{border:1px solid var(--borde);border-radius:10px;overflow:hidden;margin-bottom:10px;background:#fff;}
   .acordeon-header{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;background:none;border:none;text-align:left;cursor:pointer;}
   .acordeon-header .titulo{font-weight:700;color:var(--azul);font-size:14px;}
@@ -598,6 +602,7 @@ const NOMBRE_TIPO = {
 
 let chartComposicion = null;
 let chartDistribucionGastos = null;
+let chartTendenciaGastos = null;
 
 async function leerRangoDashboard(direccion) {
   const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
@@ -644,12 +649,13 @@ async function cargarConsulta() {
   const cont = document.getElementById("consultar-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const [filasResumen, cuentas, deudasTodas, mesActual, filasPresupuesto] = await Promise.all([
+    const [filasResumen, cuentas, deudasTodas, mesActual, filasPresupuesto, filasTendencia] = await Promise.all([
       leerTabla("tbl_Resumen"),
       leerTabla("tbl_Cuentas"),
       leerTabla("tbl_Deudas"),
       leerCeldaDashboard("B6"),
-      leerRangoDashboard("G5:I34")
+      leerRangoDashboard("G5:I34"),
+      leerRangoDashboard("K58:M69")
     ]);
     const resumen = filasResumen[0] || {};
     const deudas = deudasTodas.filter(d => d.Estado === "Activa");
@@ -702,10 +708,17 @@ async function cargarConsulta() {
       </div>
     `;
 
-    // ---- Distribución de gastos del mes ----
+    // ---- Gastos: distribución del mes / tendencia 12 meses (con selector de vista) ----
     const conGasto = categorias.filter(c => c.real > 0).sort((a,b) => b.real - a.real);
     const totalGastoMes = conGasto.reduce((s,c) => s + c.real, 0);
-    html += `<div class="subtitulo">Distribución de gastos del mes</div>`;
+    html += `<div class="subtitulo">Gastos</div>`;
+    html += `
+      <div class="toggle-vista">
+        <button type="button" class="toggle-btn activo" data-vista="mes">Este mes</button>
+        <button type="button" class="toggle-btn" data-vista="tendencia">Últimos 12 meses</button>
+      </div>`;
+
+    html += `<div id="vista-gasto-mes">`;
     if (conGasto.length === 0) {
       html += `<div class="tarjeta"><div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div></div>`;
     } else {
@@ -716,8 +729,15 @@ async function cargarConsulta() {
         html += `<tr><td>${c.nombre}<div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div></td>
                   <td class="num">${formatoMoneda(c.real)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
       });
+      html += `<tr style="font-weight:700;border-top:2px solid var(--borde);"><td>Gasto total del mes</td>
+                <td class="num">${formatoMoneda(totalGastoMes)}</td><td class="num">100%</td></tr>`;
       html += `</tbody></table></div>`;
     }
+    html += `</div>`;
+
+    html += `<div id="vista-gasto-tendencia" class="oculto">
+      <div class="tarjeta"><canvas id="grafico-tendencia-gastos" height="200"></canvas></div>
+    </div>`;
 
     // ---- Cumplimiento de presupuesto (semáforo) ----
     const relevantes = categorias
@@ -776,6 +796,21 @@ async function cargarConsulta() {
     });
     dibujarGraficoComposicion(grupos, num(resumen.TRMDelDia) || 0);
     dibujarGraficoDistribucionGastos(conGasto);
+
+    const tendencia = filasTendencia
+      .map(([mes, ingreso, gasto]) => ({ mes, gasto: num(gasto) || 0 }))
+      .filter(t => t.mes);
+    dibujarGraficoTendenciaGastos(tendencia);
+
+    document.querySelectorAll(".toggle-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("activo"));
+        btn.classList.add("activo");
+        const esMes = btn.dataset.vista === "mes";
+        document.getElementById("vista-gasto-mes").classList.toggle("oculto", !esMes);
+        document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", esMes);
+      });
+    });
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
@@ -807,6 +842,37 @@ function dibujarGraficoDistribucionGastos(conGasto) {
           display: (ctx) => ctx.dataset.data[ctx.dataIndex] / total > 0.04 // oculta % en porciones muy pequeñas (se amontonan)
         },
         tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatoMoneda(ctx.raw)}` } }
+      }
+    }
+  });
+}
+
+function dibujarGraficoTendenciaGastos(tendencia) {
+  const canvas = document.getElementById("grafico-tendencia-gastos");
+  if (!canvas || typeof Chart === "undefined") return;
+
+  if (chartTendenciaGastos) chartTendenciaGastos.destroy();
+  chartTendenciaGastos = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: tendencia.map(t => t.mes),
+      datasets: [{
+        label: "Gasto mensual",
+        data: tendencia.map(t => t.gasto),
+        borderColor: "#c62828",
+        backgroundColor: "rgba(198,40,40,0.1)",
+        fill: true,
+        tension: 0.25,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ` ${formatoMoneda(ctx.raw)}` } }
+      },
+      scales: {
+        y: { ticks: { callback: (v) => formatoMoneda(v) } }
       }
     }
   });
