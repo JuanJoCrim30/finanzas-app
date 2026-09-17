@@ -17,6 +17,10 @@
     const el = document.getElementById("login-error");
     if (el) el.textContent = "Error técnico: " + e.message;
   });
+  document.addEventListener("DOMContentLoaded", () => {
+    const pie = document.getElementById("pie-anio");
+    if (pie) pie.textContent = new Date().getFullYear();
+  });
 </script>
 <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
 <script>
@@ -65,7 +69,7 @@
   .fila-cuenta:last-child{border-bottom:none;}
   .fila-cuenta .nombre{font-weight:600;}
   .fila-cuenta .saldo{font-weight:600;}
-  .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;text-align:center;}
+  .subtitulo{font-size:13px;color:var(--texto-suave);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.03em;text-align:center;font-weight:700;}
   .estado-carga{text-align:center;padding:30px;color:var(--texto-suave);}
   .refrescar{background:none;border:1px solid var(--borde);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--azul-claro);float:right;}
   .filtro-mes{display:flex;gap:8px;align-items:end;margin-bottom:8px;}
@@ -85,6 +89,10 @@
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
   #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
+  .pie-app{padding:18px 16px 10px;text-align:center;}
+  .pie-linea{height:1px;background:linear-gradient(90deg,transparent,var(--borde) 20%,var(--borde) 80%,transparent);margin-bottom:10px;}
+  .pie-app p{margin:0;font-size:11px;color:var(--texto-suave);letter-spacing:.02em;}
+  .pie-app strong{color:var(--azul);font-weight:600;}
   .toggle-vista{display:flex;gap:6px;margin-bottom:10px;}
   .toggle-btn{flex:1;padding:9px;border:1px solid var(--borde);border-radius:8px;background:#fff;font-size:13px;font-weight:600;color:var(--texto-suave);}
   .toggle-btn.activo{background:var(--azul-claro);color:#fff;border-color:var(--azul-claro);}
@@ -131,7 +139,13 @@
 
 <div id="app-screen">
   <header>
-    <h1>Finanzas Personales</h1>
+    <h1>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px;">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 7v10M15 9.8c0-1.3-1.3-2.3-3-2.3s-3 .9-3 2.2 1.3 1.8 3 2.3 3 .9 3 2.3-1.3 2.2-3 2.2-3-.9-3-2.2"/>
+      </svg>
+      Finanzas Personales
+    </h1>
     <button id="btn-logout">Salir</button>
   </header>
 
@@ -236,6 +250,11 @@
       <div class="estado-carga">Cargando...</div>
     </div>
   </section>
+
+  <footer class="pie-app">
+    <div class="pie-linea"></div>
+    <p>Creado por <strong>Juan Cristancho</strong> · <span id="pie-anio"></span></p>
+  </footer>
 </div>
 
 <script>
@@ -755,12 +774,25 @@ async function cargarConsulta() {
                   <td class="num">${c.presupuestado>0?formatoMoneda(c.presupuestado):"—"}</td><td class="num">${formatoMoneda(c.real)}</td>
                   <td class="num">${formatoPorcentaje(pctEjecutado)}</td></tr>`;
       });
+      const totalPresupuestado = relevantes.reduce((s,c) => s + c.presupuestado, 0);
+      const totalReal = relevantes.reduce((s,c) => s + c.real, 0);
+      const pctTotalUsado = totalPresupuestado > 0 ? totalReal / totalPresupuestado : null;
+      html += `<tr style="font-weight:700;border-top:2px solid var(--borde);"><td></td><td>Total</td>
+                <td class="num">${formatoMoneda(totalPresupuestado)}</td><td class="num">${formatoMoneda(totalReal)}</td>
+                <td class="num">${formatoPorcentaje(pctTotalUsado)}</td></tr>`;
       html += `</tbody></table>`;
     }
     html += `</div>`;
 
     const grupos = agruparCuentas(cuentas.filter(c => c.Estado === "Activo" || !c.Estado));
     html += `<div class="subtitulo">Saldo por cuenta</div>`;
+    html += `
+      <div class="toggle-vista">
+        <button type="button" class="toggle-btn activo" data-vista-saldo="tipo">Por tipo de cuenta</button>
+        <button type="button" class="toggle-btn" data-vista-saldo="moneda">Totales por moneda</button>
+      </div>`;
+
+    html += `<div id="vista-saldo-tipo">`;
     grupos.forEach((g, i) => {
       html += `
         <div class="acordeon">
@@ -775,6 +807,16 @@ async function cargarConsulta() {
       });
       html += `</div></div>`;
     });
+    html += `</div>`;
+
+    const totalCOP = cuentas.filter(c => c.Moneda === "COP" && (c.Estado === "Activo" || !c.Estado))
+      .reduce((s,c) => s + (num(c.SaldoActual) || 0), 0);
+    const totalUSD = cuentas.filter(c => c.Moneda === "USD" && (c.Estado === "Activo" || !c.Estado))
+      .reduce((s,c) => s + (num(c.SaldoActual) || 0), 0);
+    html += `<div id="vista-saldo-moneda" class="oculto kpi-grid">
+      <div class="tarjeta"><div class="etiqueta">Total en COP</div><div class="valor">${formatoMoneda(totalCOP)}</div></div>
+      <div class="tarjeta"><div class="etiqueta">Total en USD</div><div class="valor">${totalUSD.toLocaleString("es-CO",{maximumFractionDigits:2})}</div></div>
+    </div>`;
 
     html += `<div class="subtitulo">Deudas activas</div><div class="tarjeta">`;
     if (deudas.length === 0) {
@@ -801,9 +843,9 @@ async function cargarConsulta() {
       .map(([mes, ingreso, gasto]) => ({ mes, gasto: num(gasto) || 0 }))
       .filter(t => t.mes);
 
-    document.querySelectorAll(".toggle-btn").forEach(btn => {
+    document.querySelectorAll(".toggle-btn[data-vista]").forEach(btn => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("activo"));
+        document.querySelectorAll(".toggle-btn[data-vista]").forEach(b => b.classList.remove("activo"));
         btn.classList.add("activo");
         const esMes = btn.dataset.vista === "mes";
         document.getElementById("vista-gasto-mes").classList.toggle("oculto", !esMes);
@@ -811,6 +853,16 @@ async function cargarConsulta() {
         // El gráfico se crea recién ahora, con el contenedor ya visible — Chart.js necesita
         // medir un tamaño real al momento de crearlo, no funciona bien si nace oculto (0x0).
         if (!esMes) dibujarGraficoTendenciaGastos(tendencia);
+      });
+    });
+
+    document.querySelectorAll(".toggle-btn[data-vista-saldo]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".toggle-btn[data-vista-saldo]").forEach(b => b.classList.remove("activo"));
+        btn.classList.add("activo");
+        const esTipo = btn.dataset.vistaSaldo === "tipo";
+        document.getElementById("vista-saldo-tipo").classList.toggle("oculto", !esTipo);
+        document.getElementById("vista-saldo-moneda").classList.toggle("oculto", esTipo);
       });
     });
   } catch (e) {
@@ -853,28 +905,52 @@ function dibujarGraficoTendenciaGastos(tendencia) {
   const canvas = document.getElementById("grafico-tendencia-gastos");
   if (!canvas || typeof Chart === "undefined") return;
 
+  const variaciones = tendencia.map((t, i) => {
+    if (i === 0) return null;
+    const anterior = tendencia[i-1].gasto;
+    if (!anterior) return null;
+    return (t.gasto - anterior) / anterior * 100;
+  });
+
   if (chartTendenciaGastos) chartTendenciaGastos.destroy();
   chartTendenciaGastos = new Chart(canvas, {
-    type: "line",
     data: {
       labels: tendencia.map(t => t.mes),
-      datasets: [{
-        label: "Gasto mensual",
-        data: tendencia.map(t => t.gasto),
-        borderColor: "#c62828",
-        backgroundColor: "rgba(198,40,40,0.1)",
-        fill: true,
-        tension: 0.25,
-        pointRadius: 3
-      }]
+      datasets: [
+        {
+          type: "bar",
+          label: "Gasto mensual",
+          data: tendencia.map(t => t.gasto),
+          backgroundColor: "#240046",
+          yAxisID: "y"
+        },
+        {
+          type: "line",
+          label: "Variación % vs. mes anterior",
+          data: variaciones,
+          borderColor: "#c62828",
+          backgroundColor: "#c62828",
+          tension: 0.25,
+          pointRadius: 3,
+          spanGaps: true,
+          yAxisID: "y1"
+        }
+      ]
     },
     options: {
       plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => ` ${formatoMoneda(ctx.raw)}` } }
+        legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.dataset.yAxisID === "y1"
+              ? ` Variación: ${ctx.raw === null ? "—" : ctx.raw.toFixed(1) + "%"}`
+              : ` Gasto: ${formatoMoneda(ctx.raw)}`
+          }
+        }
       },
       scales: {
-        y: { ticks: { callback: (v) => formatoMoneda(v) } }
+        y: { position: "left", ticks: { callback: (v) => formatoMoneda(v) }, title: { display: true, text: "Gasto" } },
+        y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { callback: (v) => v + "%" }, title: { display: true, text: "Variación %" } }
       }
     }
   });
