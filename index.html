@@ -89,6 +89,8 @@
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
   #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
+  .contenedor-tendencia{overflow-x:auto;}
+  .contenedor-tendencia > div{min-width:520px;}
   .pie-app{padding:18px 16px 10px;text-align:center;}
   .pie-linea{height:1px;background:linear-gradient(90deg,transparent,var(--borde) 20%,var(--borde) 80%,transparent);margin-bottom:10px;}
   .pie-app p{margin:0;font-size:11px;color:var(--texto-suave);letter-spacing:.02em;}
@@ -734,7 +736,7 @@ async function cargarConsulta() {
     html += `
       <div class="toggle-vista">
         <button type="button" class="toggle-btn activo" data-vista="mes">Este mes</button>
-        <button type="button" class="toggle-btn" data-vista="tendencia">Últimos 12 meses</button>
+        <button type="button" class="toggle-btn" data-vista="tendencia">Evolutivo</button>
       </div>`;
 
     html += `<div id="vista-gasto-mes">`;
@@ -755,7 +757,7 @@ async function cargarConsulta() {
     html += `</div>`;
 
     html += `<div id="vista-gasto-tendencia" class="oculto">
-      <div class="tarjeta"><canvas id="grafico-tendencia-gastos" height="200"></canvas></div>
+      <div class="tarjeta"><div class="contenedor-tendencia"><div><canvas id="grafico-tendencia-gastos" height="280"></canvas></div></div></div>
     </div>`;
 
     // ---- Cumplimiento de presupuesto (semáforo) ----
@@ -901,9 +903,19 @@ function dibujarGraficoDistribucionGastos(conGasto) {
   });
 }
 
+function formatoCorto(n) {
+  if (n === null || n === undefined) return "";
+  const signo = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1000000) return signo + (abs/1000000).toFixed(1).replace(/\.0$/,"") + "M";
+  if (abs >= 1000) return signo + (abs/1000).toFixed(0) + "K";
+  return signo + abs.toString();
+}
+
 function dibujarGraficoTendenciaGastos(tendencia) {
   const canvas = document.getElementById("grafico-tendencia-gastos");
   if (!canvas || typeof Chart === "undefined") return;
+  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   const variaciones = tendencia.map((t, i) => {
     if (i === 0) return null;
@@ -922,18 +934,28 @@ function dibujarGraficoTendenciaGastos(tendencia) {
           label: "Gasto mensual",
           data: tendencia.map(t => t.gasto),
           backgroundColor: "#240046",
-          yAxisID: "y"
+          yAxisID: "y",
+          datalabels: {
+            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
+            color: "#fff",
+            anchor: "center",
+            align: "center",
+            rotation: -90,
+            font: { size: 9, weight: "bold" },
+            formatter: (v) => formatoCorto(v)
+          }
         },
         {
           type: "line",
           label: "Variación % vs. mes anterior",
           data: variaciones,
-          borderColor: "#c62828",
-          backgroundColor: "#c62828",
+          borderColor: "#1565C0",
+          backgroundColor: "#1565C0",
           tension: 0.25,
           pointRadius: 3,
           spanGaps: true,
-          yAxisID: "y1"
+          yAxisID: "y1",
+          datalabels: { display: false }
         }
       ]
     },
@@ -949,7 +971,7 @@ function dibujarGraficoTendenciaGastos(tendencia) {
         }
       },
       scales: {
-        y: { position: "left", ticks: { callback: (v) => formatoMoneda(v) }, title: { display: true, text: "Gasto" } },
+        y: { position: "left", ticks: { callback: (v) => formatoCorto(v) }, title: { display: true, text: "Gasto" } },
         y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { callback: (v) => v + "%" }, title: { display: true, text: "Variación %" } }
       }
     }
