@@ -89,7 +89,6 @@
   .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
   #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
-  .contenedor-tendencia{overflow-x:auto;}
   .contenedor-tendencia > div{height:320px;}
   .control-meses{margin-bottom:12px;}
   .control-meses label{font-size:12px;color:var(--texto-suave);display:block;margin-bottom:4px;}
@@ -595,7 +594,9 @@ const ICONOS_SVG = {
   shield: '<path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6z"/>',
   trending: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
   coin: '<circle cx="12" cy="12" r="9"/><path d="M9 9c0-1.1 1.3-2 3-2s3 .9 3 2-1.3 1.5-3 2-3 .9-3 2 1.3 2 3 2 3-.9 3-2"/>',
-  dollar: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.5-1.3-2.5-3-2.5s-3 1-3 2.3 1.3 1.8 3 2.2 3 .9 3 2.5-1.3 2.5-3 2.5-3-1-3-2.5"/>'
+  dollar: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.5-1.3-2.5-3-2.5s-3 1-3 2.3 1.3 1.8 3 2.2 3 .9 3 2.5-1.3 2.5-3 2.5-3-1-3-2.5"/>',
+  creditcard: '<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>'
 };
 function icono(nombre) {
   return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;opacity:0.7;">${ICONOS_SVG[nombre] || ""}</svg>`;
@@ -724,12 +725,12 @@ async function cargarConsulta() {
       <div class="kpi-grid">
         <div class="tarjeta"><div class="etiqueta">${icono("percent")}Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
         <div class="tarjeta"><div class="etiqueta">${icono("shield")}Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
-        <div class="tarjeta"><div class="etiqueta">Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
+        <div class="tarjeta"><div class="etiqueta">${icono("creditcard")}Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
         <div class="tarjeta"><div class="etiqueta">${icono("trending")}Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
       </div>
 
       <div class="tarjeta">
-        <div class="etiqueta">Ritmo de gasto del mes</div>
+        <div class="etiqueta">${icono("clock")}Ritmo de gasto del mes</div>
         <div class="barra-progreso">
           <div class="relleno ${enAlerta?"alerta":"ok"}" style="width:${pctGastado!==null?Math.min(pctGastado*100,100):0}%;"></div>
           ${pctTranscurrido!==null ? `<div class="marca-transcurrido" style="left:${Math.min(pctTranscurrido*100,100)}%;"></div>` : ""}
@@ -944,12 +945,6 @@ function dibujarGraficoTendenciaGastos(tendencia) {
   const canvas = document.getElementById("grafico-tendencia-gastos");
   if (!canvas || typeof Chart === "undefined") return;
   if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
-
-  // Mas meses visibles -> el grafico se estira mas hacia los lados (barras con ancho consistente,
-  // en vez de apretarse todas dentro del mismo espacio fijo).
-  const anchoPorMes = 70;
-  const ancho = document.getElementById("ancho-tendencia");
-  if (ancho) ancho.style.width = Math.max(340, tendencia.length * anchoPorMes) + "px";
 
   const variaciones = tendencia.map((t, i) => {
     if (i === 0) return null;
