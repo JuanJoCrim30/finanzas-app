@@ -1107,8 +1107,12 @@ async function cargarHistorial() {
   try {
     const filas = (await leerTabla("tbl_Movimientos")).filter(f => f.Fecha);
 
-    filas.forEach(f => f._fechaParseada = parsearFechaExcel(f.Fecha));
-    filas.sort((a, b) => (b._fechaParseada || 0) - (a._fechaParseada || 0));
+    filas.forEach((f, i) => { f._fechaParseada = parsearFechaExcel(f.Fecha); f._orden = i; });
+    filas.sort((a, b) => {
+      const diffFecha = (b._fechaParseada || 0) - (a._fechaParseada || 0);
+      if (diffFecha !== 0) return diffFecha;
+      return b._orden - a._orden; // mismo día -> el registrado más tarde aparece primero
+    });
     const ultimos = filas.slice(0, 20);
 
     if (ultimos.length === 0) {
