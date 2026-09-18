@@ -90,7 +90,10 @@
   #grafico-composicion, #grafico-distribucion-gastos{max-width:240px;margin:0 auto;display:block;}
   #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
   .contenedor-tendencia{overflow-x:auto;}
-  .contenedor-tendencia > div{min-width:520px;}
+  .contenedor-tendencia > div{height:320px;}
+  .control-meses{margin-bottom:12px;}
+  .control-meses label{font-size:12px;color:var(--texto-suave);display:block;margin-bottom:4px;}
+  .control-meses input[type=range]{width:100%;accent-color:var(--azul-claro);}
   .pie-app{padding:18px 16px 10px;text-align:center;}
   .pie-linea{height:1px;background:linear-gradient(90deg,transparent,var(--borde) 20%,var(--borde) 80%,transparent);margin-bottom:10px;}
   .pie-app p{margin:0;font-size:11px;color:var(--texto-suave);letter-spacing:.02em;}
@@ -586,6 +589,17 @@ function formatoMoneda(n) {
   if (n === null) return "—";
   return n.toLocaleString("es-CO", { maximumFractionDigits: 0 });
 }
+const ICONOS_SVG = {
+  wallet: '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
+  percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  shield: '<path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6z"/>',
+  trending: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M9 9c0-1.1 1.3-2 3-2s3 .9 3 2-1.3 1.5-3 2-3 .9-3 2 1.3 2 3 2 3-.9 3-2"/>',
+  dollar: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.5-1.3-2.5-3-2.5s-3 1-3 2.3 1.3 1.8 3 2.2 3 .9 3 2.5-1.3 2.5-3 2.5-3-1-3-2.5"/>'
+};
+function icono(nombre) {
+  return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;opacity:0.7;">${ICONOS_SVG[nombre] || ""}</svg>`;
+}
 function formatoPorcentaje(n) {
   n = num(n);
   if (n === null) return "—";
@@ -624,6 +638,7 @@ const NOMBRE_TIPO = {
 let chartComposicion = null;
 let chartDistribucionGastos = null;
 let chartTendenciaGastos = null;
+let tendenciaCompleta = [];
 
 async function leerRangoDashboard(direccion) {
   const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
@@ -701,16 +716,16 @@ async function cargarConsulta() {
 
     let html = `
       <div class="tarjeta">
-        <div class="etiqueta">Patrimonio neto — ${resumen.MesAnalizado || ""}</div>
+        <div class="etiqueta">${icono("wallet")}Patrimonio neto — ${resumen.MesAnalizado || ""}</div>
         <div class="valor ${patrimonio!==null && patrimonio<0?"negativo":"positivo"}">${formatoMoneda(patrimonio)}</div>
         ${variacion !== null ? `<div class="etiqueta ${claseVar}">${flecha} ${formatoMoneda(Math.abs(variacion))} (${formatoPorcentaje(variacionPct)}) vs. mes anterior</div>` : ""}
       </div>
 
       <div class="kpi-grid">
-        <div class="tarjeta"><div class="etiqueta">Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
-        <div class="tarjeta"><div class="etiqueta">Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
+        <div class="tarjeta"><div class="etiqueta">${icono("percent")}Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
+        <div class="tarjeta"><div class="etiqueta">${icono("shield")}Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
         <div class="tarjeta"><div class="etiqueta">Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
-        <div class="tarjeta"><div class="etiqueta">Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
+        <div class="tarjeta"><div class="etiqueta">${icono("trending")}Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
       </div>
 
       <div class="tarjeta">
@@ -757,7 +772,13 @@ async function cargarConsulta() {
     html += `</div>`;
 
     html += `<div id="vista-gasto-tendencia" class="oculto">
-      <div class="tarjeta"><div class="contenedor-tendencia"><div><canvas id="grafico-tendencia-gastos" height="280"></canvas></div></div></div>
+      <div class="tarjeta">
+        <div class="control-meses">
+          <label>Meses a comparar: <strong id="valor-meses-tendencia">12</strong></label>
+          <input type="range" id="slider-meses-tendencia" min="2" max="12" value="12">
+        </div>
+        <div class="contenedor-tendencia"><div id="ancho-tendencia"><canvas id="grafico-tendencia-gastos" height="280"></canvas></div></div>
+      </div>
     </div>`;
 
     // ---- Cumplimiento de presupuesto (semáforo) ----
@@ -816,8 +837,8 @@ async function cargarConsulta() {
     const totalUSD = cuentas.filter(c => c.Moneda === "USD" && (c.Estado === "Activo" || !c.Estado))
       .reduce((s,c) => s + (num(c.SaldoActual) || 0), 0);
     html += `<div id="vista-saldo-moneda" class="oculto kpi-grid">
-      <div class="tarjeta"><div class="etiqueta">Total en COP</div><div class="valor">${formatoMoneda(totalCOP)}</div></div>
-      <div class="tarjeta"><div class="etiqueta">Total en USD</div><div class="valor">${totalUSD.toLocaleString("es-CO",{maximumFractionDigits:2})}</div></div>
+      <div class="tarjeta"><div class="etiqueta">${icono("coin")}Total en COP</div><div class="valor">${formatoMoneda(totalCOP)}</div></div>
+      <div class="tarjeta"><div class="etiqueta">${icono("dollar")}Total en USD</div><div class="valor">${totalUSD.toLocaleString("es-CO",{maximumFractionDigits:2})}</div></div>
     </div>`;
 
     html += `<div class="subtitulo">Deudas activas</div><div class="tarjeta">`;
@@ -844,6 +865,7 @@ async function cargarConsulta() {
     const tendencia = filasTendencia
       .map(([mes, ingreso, gasto]) => ({ mes, gasto: num(gasto) || 0 }))
       .filter(t => t.mes);
+    tendenciaCompleta = tendencia;
 
     document.querySelectorAll(".toggle-btn[data-vista]").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -854,8 +876,14 @@ async function cargarConsulta() {
         document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", esMes);
         // El gráfico se crea recién ahora, con el contenedor ya visible — Chart.js necesita
         // medir un tamaño real al momento de crearlo, no funciona bien si nace oculto (0x0).
-        if (!esMes) dibujarGraficoTendenciaGastos(tendencia);
+        if (!esMes) dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-parseInt(document.getElementById("slider-meses-tendencia").value)));
       });
+    });
+
+    document.getElementById("slider-meses-tendencia").addEventListener("input", (e) => {
+      const n = parseInt(e.target.value);
+      document.getElementById("valor-meses-tendencia").textContent = n;
+      dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-n));
     });
 
     document.querySelectorAll(".toggle-btn[data-vista-saldo]").forEach(btn => {
@@ -917,6 +945,12 @@ function dibujarGraficoTendenciaGastos(tendencia) {
   if (!canvas || typeof Chart === "undefined") return;
   if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
+  // Mas meses visibles -> el grafico se estira mas hacia los lados (barras con ancho consistente,
+  // en vez de apretarse todas dentro del mismo espacio fijo).
+  const anchoPorMes = 70;
+  const ancho = document.getElementById("ancho-tendencia");
+  if (ancho) ancho.style.width = Math.max(340, tendencia.length * anchoPorMes) + "px";
+
   const variaciones = tendencia.map((t, i) => {
     if (i === 0) return null;
     const anterior = tendencia[i-1].gasto;
@@ -960,6 +994,7 @@ function dibujarGraficoTendenciaGastos(tendencia) {
       ]
     },
     options: {
+      maintainAspectRatio: false,
       plugins: {
         legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
         tooltip: {
