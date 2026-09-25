@@ -29,7 +29,6 @@
   }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <style>
   :root{
@@ -817,10 +816,6 @@ async function cargarConsulta() {
       </div>
       <div id="evolutivo-patrimonio-full" class="oculto">
         <div class="tarjeta">
-          <div class="control-meses">
-            <label>Meses a comparar: <strong id="valor-meses-patrimonio">12</strong></label>
-            <input type="range" id="slider-meses-patrimonio" min="2" max="12" value="12">
-          </div>
           <div class="contenedor-tendencia"><div><canvas id="grafico-evolutivo-patrimonio" height="280"></canvas></div></div>
         </div>
       </div>
@@ -1004,25 +999,19 @@ async function cargarConsulta() {
       dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-n));
     });
 
-    // ---- Evolutivo de patrimonio (mini-gráfico + versión completa al tocar) ----
-    const mesesPatrimonio = ultimosMesesFin(mesActual, 12);
+    // ---- Evolutivo de patrimonio (mini-gráfico + versión completa al tocar, fijo a 6 meses) ----
+    const mesesPatrimonio = ultimosMesesFin(mesActual, 6);
     patrimonioSerieCompleta = mesesPatrimonio.map(m => ({
       mes: m.etiqueta,
       valor: patrimonioAFecha(m.fecha, cuentas, movimientosCompletos, deudasTodas, trmHistorica)
     }));
-    dibujarMiniPatrimonio(patrimonioSerieCompleta.slice(-6));
+    dibujarMiniPatrimonio(patrimonioSerieCompleta);
 
     document.getElementById("mini-patrimonio").addEventListener("click", () => {
       const cont = document.getElementById("evolutivo-patrimonio-full");
       const abrir = cont.classList.contains("oculto");
       cont.classList.toggle("oculto", !abrir);
-      if (abrir) dibujarGraficoEvolutivoPatrimonio(patrimonioSerieCompleta.slice(-parseInt(document.getElementById("slider-meses-patrimonio").value)));
-    });
-
-    document.getElementById("slider-meses-patrimonio").addEventListener("input", (e) => {
-      const n = parseInt(e.target.value);
-      document.getElementById("valor-meses-patrimonio").textContent = n;
-      dibujarGraficoEvolutivoPatrimonio(patrimonioSerieCompleta.slice(-n));
+      if (abrir) dibujarGraficoEvolutivoPatrimonio(patrimonioSerieCompleta);
     });
 
     document.querySelectorAll(".toggle-btn[data-vista-saldo]").forEach(btn => {
@@ -1093,9 +1082,10 @@ function dibujarMiniPatrimonio(serie) {
     options: {
       maintainAspectRatio: false,
       responsive: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      layout: { padding: 0 },
+      plugins: { legend: { display: false }, tooltip: { enabled: false }, datalabels: { display: false } },
       scales: { x: { display: false }, y: { display: false } },
-      elements: { line: { borderJoinStyle: "round" } }
+      elements: { line: { borderJoinStyle: "round" }, point: { radius: 0 } }
     }
   });
 }
@@ -1327,12 +1317,11 @@ async function cargarDolares() {
   const cont = document.getElementById("dolares-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const [movs, trmDiaRaw, cuentasUSD] = await Promise.all([
+    const [movs, indicadores] = await Promise.all([
       leerTabla("tbl_Movimientos"),
-      leerCeldaDashboard("B5"),
-      leerTabla("tbl_Cuentas")
+      leerRangoDashboard("B16:B19")  // B16 CostoPromedio, B17 TRM del día, B18 Saldo USD, B19 Ganancia/pérdida latente
     ]);
-    const trmHistorica = await leerTabla("tbl_TRM_Historica");
+    const [costoPromedio, trmDia, saldoUSD, gananciaLatente] = indicadores.map(fila => num(fila[0]));
 
     const compras = movs.filter(m => m.TipoMovimiento === "CompraUSD" && m.Fecha);
     const ventas = movs.filter(m => m.TipoMovimiento === "VentaUSD" && m.Fecha);
@@ -1340,21 +1329,15 @@ async function cargarDolares() {
     operaciones.forEach(m => m._fecha = parsearFechaExcel(m.Fecha));
     operaciones.sort((a,b) => (b._fecha||0) - (a._fecha||0));
 
-    const sumaPonderada = compras.reduce((s,m) => s + (num(m.Monto)||0)*(num(m.TRM_Operacion)||0), 0);
     const sumaComprado = compras.reduce((s,m) => s + (num(m.Monto)||0), 0);
-    const costoPromedio = sumaComprado > 0 ? sumaPonderada/sumaComprado : null;
     const totalVendido = ventas.reduce((s,m) => s + (num(m.Monto)||0), 0);
     const posicionNeta = sumaComprado - totalVendido;
-    const trmDia = num(trmDiaRaw) || 0;
-    const saldoUSD = cuentasUSD.filter(c => c.Moneda === "USD" && (c.Estado==="Activo"||!c.Estado))
-      .reduce((s,c) => s + (num(c.SaldoActual)||0), 0);
-    const gananciaLatente = costoPromedio !== null ? (trmDia - costoPromedio) * saldoUSD : null;
 
     let html = `
       <div class="kpi-grid">
         <div class="tarjeta"><div class="etiqueta">${icono("dollar")}Costo promedio compra</div><div class="valor">${formatoMoneda(costoPromedio)}</div></div>
         <div class="tarjeta"><div class="etiqueta">${icono("trending")}TRM del día</div><div class="valor">${formatoMoneda(trmDia)}</div></div>
-        <div class="tarjeta"><div class="etiqueta">${icono("wallet")}Posición neta (USD)</div><div class="valor">${posicionNeta.toLocaleString("es-CO",{maximumFractionDigits:2})}</div></div>
+        <div class="tarjeta"><div class="etiqueta">${icono("wallet")}Saldo total en USD</div><div class="valor">${saldoUSD!==null?saldoUSD.toLocaleString("es-CO",{maximumFractionDigits:2}):"—"}</div></div>
         <div class="tarjeta"><div class="etiqueta">${icono("percent")}Ganancia/pérdida latente</div><div class="valor ${gananciaLatente!==null && gananciaLatente<0?"negativo":"positivo"}">${formatoMoneda(gananciaLatente)}</div></div>
       </div>
 
@@ -1362,10 +1345,11 @@ async function cargarDolares() {
       <div class="tarjeta">
         <div class="fila-cuenta"><span class="nombre">Total comprado</span><span class="saldo">${sumaComprado.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
         <div class="fila-cuenta"><span class="nombre">Total vendido</span><span class="saldo">${totalVendido.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
+        <div class="fila-cuenta"><span class="nombre">Posición neta</span><span class="saldo">${posicionNeta.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
       </div>
 
-      <div class="subtitulo">Tu TRM de compra vs. TRM del mercado</div>
-      <div class="tarjeta"><canvas id="grafico-comparacion-trm" height="220"></canvas></div>
+      <div class="subtitulo">TRM de tus compras en el tiempo</div>
+      <div class="tarjeta"><canvas id="grafico-trm-compras" height="220"></canvas></div>
 
       <div class="subtitulo">Historial de operaciones</div>
       <div class="tarjeta">`;
@@ -1388,60 +1372,39 @@ async function cargarDolares() {
     html += `</div>`;
 
     cont.innerHTML = html;
-    dibujarComparacionTRM(compras, trmHistorica);
+    dibujarTRMCompras(compras);
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
   }
 }
 
-function dibujarComparacionTRM(compras, trmHistorica) {
-  const canvas = document.getElementById("grafico-comparacion-trm");
+function dibujarTRMCompras(compras) {
+  const canvas = document.getElementById("grafico-trm-compras");
   if (!canvas || typeof Chart === "undefined") return;
 
-  const mercado = trmHistorica
-    .map(t => ({ fecha: parsearFechaExcel(t.Fecha), trm: num(t.TRM) }))
-    .filter(t => t.fecha && t.trm !== null)
-    .sort((a,b) => a.fecha - b.fecha);
-
-  const comprasOrdenadas = compras
+  const puntos = compras
     .map(m => ({ fecha: parsearFechaExcel(m.Fecha), trm: num(m.TRM_Operacion) }))
-    .filter(m => m.fecha && m.trm !== null)
+    .filter(p => p.fecha && p.trm !== null)
     .sort((a,b) => a.fecha - b.fecha);
 
   if (chartComparacionTRM) chartComparacionTRM.destroy();
-  if (mercado.length === 0 && comprasOrdenadas.length === 0) {
+  if (puntos.length === 0) {
     canvas.replaceWith(Object.assign(document.createElement("div"), {
-      className: "estado-carga", textContent: "Sin datos suficientes (registra TRM histórica y compras de USD para ver esta comparación)."
+      className: "estado-carga", textContent: "Aún no registras compras de USD."
     }));
     return;
   }
   chartComparacionTRM = new Chart(canvas, {
+    type: "bar",
     data: {
-      datasets: [
-        {
-          type: "line",
-          label: "TRM del mercado",
-          data: mercado.map(t => ({ x: t.fecha, y: t.trm })),
-          borderColor: "#1565C0", backgroundColor: "#1565C0",
-          pointRadius: 0, tension: 0.15
-        },
-        {
-          type: "scatter",
-          label: "Tus compras",
-          data: comprasOrdenadas.map(c => ({ x: c.fecha, y: c.trm })),
-          backgroundColor: "#240046",
-          pointRadius: 5, pointStyle: "circle"
-        }
-      ]
+      labels: puntos.map(p => formatoFechaCorta(p.fecha)),
+      datasets: [{ label: "TRM de compra", data: puntos.map(p => p.trm), backgroundColor: "#240046" }]
     },
     options: {
       maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } } },
-      scales: {
-        x: { type: "time", time: { unit: "month" }, ticks: { font: { size: 10 } } },
-        y: { ticks: { callback: (v) => formatoCorto(v) } }
-      }
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` TRM: ${formatoMoneda(ctx.raw)}` } } },
+      scales: { y: { ticks: { callback: (v) => formatoCorto(v) } } }
     }
   });
 }
