@@ -94,8 +94,10 @@
   .control-meses input[type=range]{width:100%;accent-color:var(--azul-claro);}
   .fila-patrimonio{display:flex;justify-content:space-between;align-items:center;gap:10px;}
   .patrimonio-texto{flex:1;min-width:0;}
-  .mini-grafico{cursor:pointer;flex-shrink:0;border-radius:6px;}
+  .mini-grafico{cursor:pointer;border:1px solid var(--borde);border-radius:6px;}
   .mini-grafico:hover{background:rgba(0,0,0,.03);}
+  .mini-patrimonio-cont{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;}
+  .mini-patrimonio-titulo{font-size:9px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.02em;font-weight:600;}
   .pie-app{padding:18px 16px 10px;text-align:center;}
   .pie-linea{height:1px;background:linear-gradient(90deg,transparent,var(--borde) 20%,var(--borde) 80%,transparent);margin-bottom:10px;}
   .pie-app p{margin:0;font-size:11px;color:var(--texto-suave);letter-spacing:.02em;}
@@ -811,7 +813,10 @@ async function cargarConsulta() {
             <div class="valor ${patrimonio!==null && patrimonio<0?"negativo":"positivo"}">${formatoMoneda(patrimonio)}</div>
             ${variacion !== null ? `<div class="etiqueta ${claseVar}">${flecha} ${formatoMoneda(Math.abs(variacion))} (${formatoPorcentaje(variacionPct)}) vs. mes anterior</div>` : ""}
           </div>
-          <canvas id="mini-patrimonio" class="mini-grafico" width="90" height="50" title="Toca para ver el evolutivo completo"></canvas>
+          <div class="mini-patrimonio-cont">
+            <canvas id="mini-patrimonio" class="mini-grafico" width="70" height="42" title="Toca para ver el evolutivo completo"></canvas>
+            <span class="mini-patrimonio-titulo">Evolutivo</span>
+          </div>
         </div>
       </div>
       <div id="evolutivo-patrimonio-full" class="oculto">
@@ -1072,12 +1077,11 @@ function dibujarMiniPatrimonio(serie) {
   const canvas = document.getElementById("mini-patrimonio");
   if (!canvas || typeof Chart === "undefined") return;
   if (chartMiniPatrimonio) chartMiniPatrimonio.destroy();
-  const colorLinea = serie.length > 1 && serie[serie.length-1].valor >= serie[0].valor ? "#2e7d32" : "#c62828";
   chartMiniPatrimonio = new Chart(canvas, {
     type: "line",
     data: {
       labels: serie.map(s => s.mes),
-      datasets: [{ data: serie.map(s => s.valor), borderColor: colorLinea, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false }]
+      datasets: [{ data: serie.map(s => s.valor), borderColor: "#1565C0", borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false }]
     },
     options: {
       maintainAspectRatio: false,
