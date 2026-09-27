@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Finanzas Personales</title>
+<title>Finanzas Personales JJ</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -1315,8 +1315,6 @@ document.getElementById("btn-refrescar-historial").addEventListener("click", car
 document.getElementById("btn-refrescar-dolares").addEventListener("click", cargarDolares);
 
 // ================== TAB DÓLARES ==================
-let chartComparacionTRM = null;
-
 async function cargarDolares() {
   const cont = document.getElementById("dolares-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
@@ -1337,6 +1335,14 @@ async function cargarDolares() {
     const totalVendido = ventas.reduce((s,m) => s + (num(m.Monto)||0), 0);
     const posicionNeta = sumaComprado - totalVendido;
 
+    // Ganancias: rendimiento acumulado en cuentas USD (chequeos mensuales de valor, ej. CDT/fondos en dólares).
+    // Esto explica buena parte de la diferencia entre "Posición neta" (solo compras y ventas) y "Saldo total"
+    // (el saldo real de tus cuentas, que también crece por estos rendimientos, sin que tú compres más dólares).
+    const ganancias = movs
+      .filter(m => m.TipoMovimiento === "ActualizacionValor" && m.MonedaCuentaDestino === "USD")
+      .reduce((s,m) => s + (num(m.ImpactoDestino)||0), 0);
+    const otrosMovimientos = saldoUSD !== null ? saldoUSD - posicionNeta - ganancias : null;
+
     let html = `
       <div class="kpi-grid">
         <div class="tarjeta"><div class="etiqueta">${icono("dollar")}Costo promedio compra</div><div class="valor">${formatoMoneda(costoPromedio)}</div></div>
@@ -1349,11 +1355,11 @@ async function cargarDolares() {
       <div class="tarjeta">
         <div class="fila-cuenta"><span class="nombre">Total comprado</span><span class="saldo">${sumaComprado.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
         <div class="fila-cuenta"><span class="nombre">Total vendido</span><span class="saldo">${totalVendido.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
-        <div class="fila-cuenta"><span class="nombre">Posición neta</span><span class="saldo">${posicionNeta.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
+        <div class="fila-cuenta"><span class="nombre">Posición neta (compras − ventas)</span><span class="saldo">${posicionNeta.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
+        <div class="fila-cuenta"><span class="nombre">Ganancias (rendimiento en USD)</span><span class="saldo">${ganancias.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>
+        <div class="fila-cuenta" style="border-top:2px solid var(--borde);font-weight:700;"><span class="nombre">Saldo total en USD</span><span class="saldo">${saldoUSD!==null?saldoUSD.toLocaleString("es-CO",{maximumFractionDigits:2}):"—"} USD</span></div>
+        ${otrosMovimientos !== null && Math.abs(otrosMovimientos) > 0.01 ? `<div class="fila-cuenta"><span class="nombre" style="font-size:11px;color:var(--texto-suave);">Diferencia sin explicar (gastos/ingresos directos en USD, saldo inicial, etc.)</span><span class="saldo" style="font-size:11px;color:var(--texto-suave);">${otrosMovimientos.toLocaleString("es-CO",{maximumFractionDigits:2})} USD</span></div>` : ""}
       </div>
-
-      <div class="subtitulo">TRM de tus compras en el tiempo</div>
-      <div class="tarjeta"><canvas id="grafico-trm-compras" height="220"></canvas></div>
 
       <div class="subtitulo">Historial de operaciones</div>
       <div class="tarjeta">`;
@@ -1376,41 +1382,10 @@ async function cargarDolares() {
     html += `</div>`;
 
     cont.innerHTML = html;
-    dibujarTRMCompras(compras);
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
   }
-}
-
-function dibujarTRMCompras(compras) {
-  const canvas = document.getElementById("grafico-trm-compras");
-  if (!canvas || typeof Chart === "undefined") return;
-
-  const puntos = compras
-    .map(m => ({ fecha: parsearFechaExcel(m.Fecha), trm: num(m.TRM_Operacion) }))
-    .filter(p => p.fecha && p.trm !== null)
-    .sort((a,b) => a.fecha - b.fecha);
-
-  if (chartComparacionTRM) chartComparacionTRM.destroy();
-  if (puntos.length === 0) {
-    canvas.replaceWith(Object.assign(document.createElement("div"), {
-      className: "estado-carga", textContent: "Aún no registras compras de USD."
-    }));
-    return;
-  }
-  chartComparacionTRM = new Chart(canvas, {
-    type: "bar",
-    data: {
-      labels: puntos.map(p => formatoFechaCorta(p.fecha)),
-      datasets: [{ label: "TRM de compra", data: puntos.map(p => p.trm), backgroundColor: "#240046" }]
-    },
-    options: {
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` TRM: ${formatoMoneda(ctx.raw)}` } } },
-      scales: { y: { ticks: { callback: (v) => formatoCorto(v) } } }
-    }
-  });
 }
 
 async function cargarHistorial() {
