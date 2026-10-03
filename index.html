@@ -183,6 +183,17 @@
   .tc-fecha.neutro .d{color:var(--texto-suave);}
   .tc-lineas{margin-top:10px;}
   .tc-lineas .fila-cuenta{padding:7px 0;font-size:13px;}
+  /* ---- Ritmo + proyección integrados en una sola tarjeta ---- */
+  .barra-progreso .relleno{position:relative;z-index:1;}
+  .barra-progreso .marca-transcurrido{z-index:2;}
+  .barra-progreso .proy-fantasma{position:absolute;top:0;bottom:0;left:0;z-index:0;border-radius:6px;}
+  .barra-progreso .proy-fantasma.ok{background:repeating-linear-gradient(45deg,#c8e6c9,#c8e6c9 4px,#e8f5e9 4px,#e8f5e9 8px);}
+  .barra-progreso .proy-fantasma.alerta{background:repeating-linear-gradient(45deg,#ffcdd2,#ffcdd2 4px,#fdecea 4px,#fdecea 8px);}
+  .leyenda-barra{flex-wrap:wrap;gap:2px 10px;}
+  .leyenda-barra .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px;}
+  .leyenda-barra .sw.ok{background:repeating-linear-gradient(45deg,#a5d6a7,#a5d6a7 2px,#e8f5e9 2px,#e8f5e9 4px);}
+  .leyenda-barra .sw.alerta{background:repeating-linear-gradient(45deg,#ef9a9a,#ef9a9a 2px,#fdecea 2px,#fdecea 4px);}
+  .proy-sep{height:1px;background:var(--borde);margin:14px 0 12px;}
 </style>
 </head>
 <body>
@@ -895,34 +906,39 @@ function sumaMovGastoMes(movimientos, anio, mes) {
   });
   return { fijo, variable };
 }
-function htmlProyeccionGasto(categorias, movimientos, mesStr, pct) {
-  if (!mesStr || pct === null || pct <= 0) return ""; // mes futuro: no hay nada que proyectar
+function datosProyeccion(categorias, movimientos, mesStr, pct) {
+  if (!mesStr || pct === null || pct <= 0) return null; // mes futuro: no hay nada que proyectar
   const [anio, mes] = String(mesStr).split("-").map(v => parseInt(v, 10));
-  if (!anio || !mes) return "";
+  if (!anio || !mes) return null;
   const diasMes = new Date(anio, mes, 0).getDate();
   const presupuesto = categorias.reduce((s, c) => s + (c.presupuestado || 0), 0);
   const { fijo, variable } = sumaMovGastoMes(movimientos, anio, mes);
   const gasto = fijo + variable;
-
-  // Mes ya cerrado: solo resumen real vs. presupuesto
-  if (pct >= 1) {
-    const dif = gasto - presupuesto;
-    return `<div class="tarjeta">
-      <div class="etiqueta">${icono("trending")}Cierre del mes</div>
-      <div class="proy-valor ${presupuesto > 0 && dif > 0 ? "negativo" : "positivo"}">${formatoMoneda(gasto)}</div>
-      <div class="proy-sub">${presupuesto > 0 ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "te pasaste por" : "ahorraste"} ${formatoMoneda(Math.abs(dif))}` : "Sin presupuesto cargado para este mes"}</div>
-    </div>`;
-  }
+  if (pct >= 1) return { cerrado: true, gasto, presupuesto, proyeccion: gasto };
 
   const diasTrans = Math.max(1, Math.round(pct * diasMes));
   const diasRest = Math.max(0, diasMes - diasTrans);
   // Fijos: se toman tal cual (arriendo, suscripciones). Variables: se proyectan al ritmo actual.
   const proyeccion = fijo + variable / pct;
+  return { cerrado: false, gasto, fijo, variable, presupuesto, proyeccion, diasTrans, diasRest,
+           promVariable: variable / diasTrans, pct: presupuesto > 0 ? proyeccion / presupuesto : null };
+}
+// Devuelve solo el bloque interno (sin tarjeta propia): va dentro de la tarjeta "Ritmo de gasto del mes"
+function htmlProyeccionGasto(d) {
+  if (!d) return "";
+  const { gasto, presupuesto, proyeccion } = d;
+  if (d.cerrado) {
+    const dif = gasto - presupuesto;
+    return `<div class="proy-sep"></div>
+      <div class="etiqueta">${icono("trending")}Cierre del mes</div>
+      <div class="proy-valor ${presupuesto > 0 && dif > 0 ? "negativo" : "positivo"}">${formatoMoneda(gasto)}</div>
+      <div class="proy-sub">${presupuesto > 0 ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "te pasaste por" : "ahorraste"} ${formatoMoneda(Math.abs(dif))}` : "Sin presupuesto cargado para este mes"}</div>`;
+  }
+  const { fijo, variable, diasTrans, diasRest, promVariable } = d;
   const dif = proyeccion - presupuesto;
   const color = presupuesto <= 0 ? "var(--texto)"
     : proyeccion > presupuesto ? "var(--rojo)"
     : proyeccion > presupuesto * 0.9 ? "#b26a00" : "var(--verde)";
-  const promVariable = variable / diasTrans;
 
   let nota = "";
   if (presupuesto > 0) {
@@ -938,7 +954,7 @@ function htmlProyeccionGasto(categorias, movimientos, mesStr, pct) {
     }
   }
 
-  return `<div class="tarjeta">
+  return `<div class="proy-sep"></div>
     <div class="etiqueta">${icono("trending")}Proyección a fin de mes</div>
     <div class="proy-valor" style="color:${color};">${formatoMoneda(proyeccion)}</div>
     <div class="proy-sub">${presupuesto > 0
@@ -951,8 +967,7 @@ function htmlProyeccionGasto(categorias, movimientos, mesStr, pct) {
       <div><div class="t">Días restantes</div><div class="v">${diasRest}</div></div>
     </div>
     ${nota}
-    <div class="proy-aviso">Los gastos fijos se toman tal cual; los variables se proyectan al ritmo de los ${diasTrans} días transcurridos.${diasTrans < 7 ? " Aún es pronto en el mes: la estimación se afina con los días." : ""}</div>
-  </div>`;
+    <div class="proy-aviso">Los gastos fijos se toman tal cual; los variables se proyectan al ritmo de los ${diasTrans} días transcurridos.${diasTrans < 7 ? " Aún es pronto en el mes: la estimación se afina con los días." : ""}</div>`;
 }
 
 // ---------- Tarjeta de crédito: corte y pago ----------
@@ -1065,6 +1080,17 @@ async function cargarConsulta() {
     const pctTranscurrido = num(resumen.PctMesTranscurrido);
     const pctGastado = num(resumen.PctPresupuestoGastado);
     const enAlerta = pctTranscurrido !== null && pctGastado !== null && pctGastado > pctTranscurrido;
+    const proy = datosProyeccion(categorias, movimientosCompletos, mesActual, pctTranscurrido);
+    const proyAlerta = proy && proy.pct !== null && proy.pct > 1;
+    // Si hay proyección, el estado del ritmo se basa en ella (evita que un gasto fijo pagado el día 1 pinte todo de rojo)
+    const usaProy = !!(proy && !proy.cerrado && proy.pct !== null);
+    const alertaVista = usaProy ? proy.pct > 1 : enAlerta;
+    const textoEstado = usaProy
+      ? (proy.pct > 1 ? "Al ritmo actual superarías el presupuesto del mes"
+        : proy.pct > 0.9 ? "Al ritmo actual cerrarías muy cerca del límite del presupuesto"
+        : "Al ritmo actual cerrarías dentro del presupuesto")
+      : (resumen.EstadoRitmoGasto || "");
+    const colorEstado = usaProy ? (proy.pct > 1 ? "var(--rojo)" : proy.pct > 0.9 ? "#b26a00" : "var(--verde)") : (enAlerta ? "var(--rojo)" : "var(--verde)");
 
     let html = `
       <div class="tarjeta">
@@ -1096,14 +1122,19 @@ async function cargarConsulta() {
       <div class="tarjeta">
         <div class="etiqueta">${icono("clock")}Ritmo de gasto del mes</div>
         <div class="barra-progreso">
-          <div class="relleno ${enAlerta?"alerta":"ok"}" style="width:${pctGastado!==null?Math.min(pctGastado*100,100):0}%;"></div>
+          ${proy && !proy.cerrado && proy.pct !== null ? `<div class="proy-fantasma ${proyAlerta?"alerta":"ok"}" style="width:${Math.min(proy.pct*100,100)}%;"></div>` : ""}
+          <div class="relleno ${alertaVista?"alerta":"ok"}" style="width:${pctGastado!==null?Math.min(pctGastado*100,100):0}%;"></div>
           ${pctTranscurrido!==null ? `<div class="marca-transcurrido" style="left:${Math.min(pctTranscurrido*100,100)}%;"></div>` : ""}
         </div>
-        <div class="leyenda-barra"><span>Gastado: ${formatoPorcentaje(pctGastado)}</span><span>Mes transcurrido: ${formatoPorcentaje(pctTranscurrido)}</span></div>
-        <div style="font-size:13px;margin-top:6px;color:${enAlerta?'var(--rojo)':'var(--verde)'};">${resumen.EstadoRitmoGasto || ""}</div>
+        <div class="leyenda-barra">
+          <span>Gastado: ${formatoPorcentaje(pctGastado)}</span>
+          <span>Mes transcurrido: ${formatoPorcentaje(pctTranscurrido)}</span>
+          ${proy && !proy.cerrado && proy.pct !== null ? `<span><span class="sw ${proyAlerta?"alerta":"ok"}"></span>Proyección: ${formatoPorcentaje(proy.pct)}</span>` : ""}
+        </div>
+        <div style="font-size:13px;margin-top:6px;color:${colorEstado};">${textoEstado}</div>
+        ${htmlProyeccionGasto(proy)}
       </div>
 
-      ${htmlProyeccionGasto(categorias, movimientosCompletos, mesActual, pctTranscurrido)}
       ${htmlTarjetasCredito(cuentas, movimientosCompletos)}
 
       <div class="tarjeta">
