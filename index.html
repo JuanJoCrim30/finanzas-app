@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Finanzas Personales </title>
+<title>Finanzas Personales</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -140,6 +140,26 @@
   .mov-monto{font-weight:700;font-size:15px;}
   .mov-detalle{font-size:12px;color:var(--texto-suave);margin-top:4px;}
   .mov-fecha{font-size:11px;color:var(--texto-suave);}
+  /* ---- CDT: vencimientos ---- */
+  .cdt-item{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--borde);}
+  .cdt-item:last-child{border-bottom:none;}
+  .cdt-icono{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cdt-icono.vigente{background:#e8f5e9;color:#2e7d32;}
+  .cdt-icono.proximo{background:#fff8e1;color:#b26a00;}
+  .cdt-icono.pronto{background:#fdecea;color:#c62828;}
+  .cdt-icono.vencido{background:#eceff1;color:#37474f;}
+  .cdt-icono.sinfecha{background:#eef1f4;color:#6b7280;}
+  .cdt-info{flex:1;min-width:0;}
+  .cdt-nombre{font-weight:600;font-size:14px;}
+  .cdt-detalle{font-size:12px;color:var(--texto-suave);margin-top:2px;}
+  .cdt-dias{text-align:right;flex-shrink:0;min-width:64px;}
+  .cdt-dias .n{display:block;font-size:20px;font-weight:700;line-height:1.1;}
+  .cdt-dias .u{display:block;font-size:11px;color:var(--texto-suave);}
+  .cdt-dias .plazo{display:block;font-size:10px;color:var(--texto-suave);margin-top:2px;}
+  .cdt-dias.vigente .n{color:#2e7d32;}
+  .cdt-dias.proximo .n{color:#b26a00;}
+  .cdt-dias.pronto .n{color:#c62828;}
+  .cdt-dias.vencido .n{color:#37474f;}
 </style>
 </head>
 <body>
@@ -163,7 +183,7 @@
         <circle cx="12" cy="12" r="9"/>
         <path d="M12 7v10M15 9.8c0-1.3-1.3-2.3-3-2.3s-3 .9-3 2.2 1.3 1.8 3 2.3 3 .9 3 2.3-1.3 2.2-3 2.2-3-.9-3-2.2"/>
       </svg>
-      Finanzas Personales JJ
+      Finanzas Personales
     </h1>
     <button id="btn-logout">Salir</button>
   </header>
@@ -625,7 +645,9 @@ const ICONOS_SVG = {
   clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 16 14"/>',
   cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/>',
   bank: '<path d="M3 21h18M5 21V10M19 21V10M3 10l9-6 9 6M9 21v-6h6v6"/>',
-  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  hourglass: '<path d="M6 2h12M6 22h12M7 2v4a5 5 0 0 0 2 4l3 2-3 2a5 5 0 0 0-2 4v4M17 2v4a5 5 0 0 1-2 4l-3 2 3 2a5 5 0 0 1 2 4v4"/>'
 };
 function icono(nombre) {
   return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;opacity:0.7;">${ICONOS_SVG[nombre] || ""}</svg>`;
@@ -764,6 +786,79 @@ function ultimosMesesFin(mesBaseStr, cantidad) {
     resultado.push({ etiqueta: `${meses3[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`, fecha: d });
   }
   return resultado;
+}
+
+// ---------- CDT: vencimientos ----------
+function diasHasta(fecha) {
+  const h = new Date();
+  const hoy = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  return Math.round((fecha - hoy) / 86400000);
+}
+function plazoAproximado(dias) {
+  if (dias < 60) return "";
+  const meses = Math.round(dias / 30.44);
+  if (meses < 12) return `≈ ${meses} meses`;
+  const a = Math.floor(meses / 12), m = meses % 12;
+  return `≈ ${a} año${a > 1 ? "s" : ""}${m ? ` y ${m} mes${m > 1 ? "es" : ""}` : ""}`;
+}
+function estadoCDT(dias) {
+  if (dias === null) return { clase: "sinfecha", emoji: "⚪", texto: "Sin fecha" };
+  if (dias < 0)  return { clase: "vencido", emoji: "⚫", texto: "Vencido" };
+  if (dias <= 30) return { clase: "pronto",  emoji: "🔴", texto: "Vence pronto" };
+  if (dias <= 90) return { clase: "proximo", emoji: "🟡", texto: "Próximo a vencer" };
+  return { clase: "vigente", emoji: "🟢", texto: "Vigente" };
+}
+function htmlSeccionCDT(cuentas) {
+  const KEY_VENC = "FechaVencimiento (solo CDT)", KEY_TASA = "TasaInteresEA (solo CDT)";
+  const lista = cuentas
+    .filter(c => c.TipoCuenta === "CDT" && (c.Estado === "Activo" || !c.Estado))
+    .map(c => {
+      const f = parsearFechaExcel(c[KEY_VENC]);
+      return { c, fecha: f, dias: f ? diasHasta(f) : null, tasa: num(c[KEY_TASA]) };
+    })
+    // Un CDT sin fecha y sin saldo (ej. cuenta vacía) no aporta información
+    .filter(x => x.fecha || (num(x.c.SaldoActual) || 0) !== 0)
+    .sort((a, b) => ((a.dias === null) - (b.dias === null)) || (a.dias - b.dias));
+  if (lista.length === 0) return "";
+
+  const vigentes = lista.filter(x => x.dias !== null && x.dias >= 0);
+  const resumen = vigentes.length
+    ? `Próximo en ${vigentes[0].dias} ${vigentes[0].dias === 1 ? "día" : "días"}`
+    : `${lista.length} CDT`;
+
+  const svgGrande = (nombre) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONOS_SVG[nombre]}</svg>`;
+
+  let h = `<div class="subtitulo">CDT y vencimientos</div>
+    <div class="acordeon">
+      <button type="button" class="acordeon-header" data-idx="cdt">
+        <span class="titulo">${icono("calendar")}Mis CDT (${lista.length})</span>
+        <span class="subtotal">${resumen}</span>
+        <span class="flecha">▾</span>
+      </button>
+      <div class="acordeon-contenido oculto" id="acordeon-cdt">`;
+  lista.forEach(({ c, fecha, dias, tasa }) => {
+    const est = estadoCDT(dias);
+    const fechaTxt = fecha ? fecha.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }) : "sin fecha de vencimiento";
+    const tasaTxt = tasa !== null ? ` · ${(tasa * 100).toLocaleString("es-CO", { maximumFractionDigits: 2 })}% EA` : "";
+    let bloqueDias;
+    if (dias === null) bloqueDias = `<span class="n">—</span>`;
+    else if (dias < 0) bloqueDias = `<span class="n">${Math.abs(dias)}</span><span class="u">días de vencido</span>`;
+    else if (dias === 0) bloqueDias = `<span class="n">Hoy</span><span class="u">vence</span>`;
+    else bloqueDias = `<span class="n">${dias}</span><span class="u">${dias === 1 ? "día" : "días"}</span>` +
+         (plazoAproximado(dias) ? `<span class="plazo">${plazoAproximado(dias)}</span>` : "");
+    const iconoNombre = dias !== null && dias < 0 ? "clock" : (dias !== null && dias <= 90 ? "hourglass" : "calendar");
+    h += `<div class="cdt-item">
+        <div class="cdt-icono ${est.clase}" title="${est.texto}">${svgGrande(iconoNombre)}</div>
+        <div class="cdt-info">
+          <div class="cdt-nombre">${est.emoji} ${c.Nombre}</div>
+          <div class="cdt-detalle">${dias !== null && dias < 0 ? "Venció" : "Vence"} ${fechaTxt}${tasaTxt}</div>
+          <div class="cdt-detalle">${formatoMoneda(c.SaldoActual)} ${c.Moneda || ""}</div>
+        </div>
+        <div class="cdt-dias ${est.clase}">${bloqueDias}</div>
+      </div>`;
+  });
+  h += `</div></div>`;
+  return h;
 }
 
 async function cargarConsulta() {
@@ -968,6 +1063,8 @@ async function cargarConsulta() {
       });
     }
     html += `</div>`;
+
+    html += htmlSeccionCDT(cuentas);
 
     cont.innerHTML = html;
     document.querySelectorAll(".acordeon-header").forEach(btn => {
