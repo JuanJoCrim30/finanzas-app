@@ -160,6 +160,29 @@
   .cdt-dias.proximo .n{color:#b26a00;}
   .cdt-dias.pronto .n{color:#c62828;}
   .cdt-dias.vencido .n{color:#37474f;}
+  /* ---- Proyección de gasto y tarjeta de crédito ---- */
+  .proy-valor{font-size:26px;font-weight:700;margin-top:4px;}
+  .proy-sub{font-size:12px;color:var(--texto-suave);margin-top:2px;}
+  .proy-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+  .proy-grid > div{background:#f7f8fa;border-radius:8px;padding:9px 10px;}
+  .proy-grid .t{font-size:11px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.02em;}
+  .proy-grid .v{font-size:15px;font-weight:700;margin-top:2px;}
+  .proy-nota{font-size:12px;margin-top:10px;padding:9px 10px;border-radius:8px;background:#f7f8fa;color:var(--texto);}
+  .proy-nota.alerta{background:#fdecea;color:#8e1b1b;}
+  .proy-nota.ok{background:#e8f5e9;color:#1b5e20;}
+  .proy-aviso{font-size:11px;color:var(--texto-suave);margin-top:8px;font-style:italic;}
+  .tc-nombre{font-weight:700;font-size:14px;color:var(--azul);margin:2px 0 10px;}
+  .tc-fechas{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .tc-fecha{border-radius:10px;padding:10px;background:#f7f8fa;}
+  .tc-fecha .t{font-size:11px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.02em;}
+  .tc-fecha .f{font-size:14px;font-weight:700;margin-top:3px;}
+  .tc-fecha .d{font-size:12px;margin-top:2px;font-weight:600;}
+  .tc-fecha.vigente{background:#e8f5e9;} .tc-fecha.vigente .d{color:#2e7d32;}
+  .tc-fecha.proximo{background:#fff8e1;} .tc-fecha.proximo .d{color:#b26a00;}
+  .tc-fecha.pronto{background:#fdecea;}  .tc-fecha.pronto .d{color:#c62828;}
+  .tc-fecha.neutro .d{color:var(--texto-suave);}
+  .tc-lineas{margin-top:10px;}
+  .tc-lineas .fila-cuenta{padding:7px 0;font-size:13px;}
 </style>
 </head>
 <body>
@@ -861,6 +884,149 @@ function htmlSeccionCDT(cuentas) {
   return h;
 }
 
+// ---------- Proyección de gasto a fin de mes ----------
+function sumaMovGastoMes(movimientos, anio, mes) {
+  let fijo = 0, variable = 0;
+  movimientos.forEach(m => {
+    if (m.TipoMovimiento !== "Gasto" || !m._fecha) return;
+    if (m._fecha.getFullYear() !== anio || m._fecha.getMonth() !== mes - 1) return;
+    const v = num(m.MontoCOP) ?? num(m.Monto) ?? 0;
+    if (m.ClasificacionGasto === "Fijo") fijo += v; else variable += v;
+  });
+  return { fijo, variable };
+}
+function htmlProyeccionGasto(categorias, movimientos, mesStr, pct) {
+  if (!mesStr || pct === null || pct <= 0) return ""; // mes futuro: no hay nada que proyectar
+  const [anio, mes] = String(mesStr).split("-").map(v => parseInt(v, 10));
+  if (!anio || !mes) return "";
+  const diasMes = new Date(anio, mes, 0).getDate();
+  const presupuesto = categorias.reduce((s, c) => s + (c.presupuestado || 0), 0);
+  const { fijo, variable } = sumaMovGastoMes(movimientos, anio, mes);
+  const gasto = fijo + variable;
+
+  // Mes ya cerrado: solo resumen real vs. presupuesto
+  if (pct >= 1) {
+    const dif = gasto - presupuesto;
+    return `<div class="tarjeta">
+      <div class="etiqueta">${icono("trending")}Cierre del mes</div>
+      <div class="proy-valor ${presupuesto > 0 && dif > 0 ? "negativo" : "positivo"}">${formatoMoneda(gasto)}</div>
+      <div class="proy-sub">${presupuesto > 0 ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "te pasaste por" : "ahorraste"} ${formatoMoneda(Math.abs(dif))}` : "Sin presupuesto cargado para este mes"}</div>
+    </div>`;
+  }
+
+  const diasTrans = Math.max(1, Math.round(pct * diasMes));
+  const diasRest = Math.max(0, diasMes - diasTrans);
+  // Fijos: se toman tal cual (arriendo, suscripciones). Variables: se proyectan al ritmo actual.
+  const proyeccion = fijo + variable / pct;
+  const dif = proyeccion - presupuesto;
+  const color = presupuesto <= 0 ? "var(--texto)"
+    : proyeccion > presupuesto ? "var(--rojo)"
+    : proyeccion > presupuesto * 0.9 ? "#b26a00" : "var(--verde)";
+  const promVariable = variable / diasTrans;
+
+  let nota = "";
+  if (presupuesto > 0) {
+    const restante = presupuesto - gasto;
+    if (restante <= 0) {
+      nota = `<div class="proy-nota alerta">Ya superaste el presupuesto del mes por ${formatoMoneda(Math.abs(restante))}.</div>`;
+    } else if (diasRest > 0) {
+      const tope = restante / diasRest;
+      const ok = promVariable <= tope;
+      nota = `<div class="proy-nota ${ok ? "ok" : "alerta"}">Para cerrar dentro del presupuesto, te quedan <strong>${formatoMoneda(restante)}</strong>: unos <strong>${formatoMoneda(tope)}</strong> por día durante ${diasRest} ${diasRest === 1 ? "día" : "días"}${ok ? "." : `, y tu promedio variable va en ${formatoMoneda(promVariable)}/día.`}</div>`;
+    } else {
+      nota = `<div class="proy-nota ok">Último día del mes: te quedan ${formatoMoneda(restante)} del presupuesto.</div>`;
+    }
+  }
+
+  return `<div class="tarjeta">
+    <div class="etiqueta">${icono("trending")}Proyección a fin de mes</div>
+    <div class="proy-valor" style="color:${color};">${formatoMoneda(proyeccion)}</div>
+    <div class="proy-sub">${presupuesto > 0
+      ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "excederías por" : "quedarías con"} ${formatoMoneda(Math.abs(dif))}${dif > 0 ? "" : " de margen"} (${(Math.abs(dif) / presupuesto * 100).toFixed(0)}%)`
+      : "Sin presupuesto cargado para este mes"}</div>
+    <div class="proy-grid">
+      <div><div class="t">Gastado hasta hoy</div><div class="v">${formatoMoneda(gasto)}</div></div>
+      <div><div class="t">Variable por día</div><div class="v">${formatoMoneda(promVariable)}</div></div>
+      <div><div class="t">Fijos (ya registrados)</div><div class="v">${formatoMoneda(fijo)}</div></div>
+      <div><div class="t">Días restantes</div><div class="v">${diasRest}</div></div>
+    </div>
+    ${nota}
+    <div class="proy-aviso">Los gastos fijos se toman tal cual; los variables se proyectan al ritmo de los ${diasTrans} días transcurridos.${diasTrans < 7 ? " Aún es pronto en el mes: la estimación se afina con los días." : ""}</div>
+  </div>`;
+}
+
+// ---------- Tarjeta de crédito: corte y pago ----------
+const TC_DIA_CORTE = 30;  // la tarjeta corta el día 30 de cada mes (en febrero, el último día)
+const TC_DIA_PAGO  = 15;  // y el pago límite es el 15 del mes siguiente
+function fechaDiaMes(anio, mes, dia) {
+  // mes puede salir de rango (-1, 12): Date lo normaliza. Si el día no existe (30 de feb) usa el último del mes.
+  const ult = new Date(anio, mes + 1, 0).getDate();
+  return new Date(anio, mes, Math.min(dia, ult));
+}
+function proximaFechaDia(dia, hoy) {
+  let f = fechaDiaMes(hoy.getFullYear(), hoy.getMonth(), dia);
+  if (f < hoy) f = fechaDiaMes(hoy.getFullYear(), hoy.getMonth() + 1, dia);
+  return f;
+}
+function ultimoCorte(hoy) {
+  let f = fechaDiaMes(hoy.getFullYear(), hoy.getMonth(), TC_DIA_CORTE);
+  if (f > hoy) f = fechaDiaMes(hoy.getFullYear(), hoy.getMonth() - 1, TC_DIA_CORTE);
+  return f;
+}
+function textoDias(d) { return d === 0 ? "Es hoy" : d === 1 ? "Mañana" : `Faltan ${d} días`; }
+function htmlTarjetasCredito(cuentas, movimientos, hoyRef) {
+  const h0 = hoyRef || new Date();
+  const hoy = new Date(h0.getFullYear(), h0.getMonth(), h0.getDate());
+  const tarjetas = cuentas.filter(c => c.TipoCuenta === "TarjetaCredito" && (c.Estado === "Activo" || !c.Estado));
+  if (tarjetas.length === 0) return "";
+
+  const corte = proximaFechaDia(TC_DIA_CORTE, hoy);
+  const pago = proximaFechaDia(TC_DIA_PAGO, hoy);
+  const diasCorte = Math.round((corte - hoy) / 86400000);
+  const diasPago = Math.round((pago - hoy) / 86400000);
+  const ultCorte = ultimoCorte(hoy);
+  const fmt = (d) => d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
+
+  let html = `<div class="tarjeta"><div class="etiqueta">${icono("creditcard")}Tarjeta de crédito: corte y pago</div>`;
+  tarjetas.forEach(c => {
+    const saldo = num(c.SaldoActual) || 0;
+    const deuda = Math.max(0, -saldo);
+    const comprasCiclo = movimientos
+      .filter(m => m.TipoMovimiento === "Gasto" && m.CuentaOrigen === c.CuentaID && m._fecha && m._fecha > ultCorte && m._fecha <= hoy)
+      .reduce((s, m) => s + (num(m.MontoCOP) ?? num(m.Monto) ?? 0), 0);
+    // Lo que ya está en extractos cerrados = deuda total menos lo comprado desde el último corte
+    const extractoCerrado = Math.max(0, deuda - comprasCiclo);
+
+    // Si el pago límite del último extracto ya pasó y aún hay saldo cerrado, está vencido
+    const pagoUltExtracto = fechaDiaMes(ultCorte.getFullYear(), ultCorte.getMonth() + 1, TC_DIA_PAGO);
+    const pagoVencido = extractoCerrado > 0 && pagoUltExtracto < hoy;
+    const clasePago = pagoVencido ? "pronto" : extractoCerrado <= 0 ? "vigente" : diasPago <= 3 ? "pronto" : diasPago <= 7 ? "proximo" : "vigente";
+    const claseCorte = diasCorte <= 3 ? "proximo" : "neutro";
+
+    html += `<div class="tc-nombre">${c.Nombre}</div>
+      <div class="tc-fechas">
+        <div class="tc-fecha ${claseCorte}">
+          <div class="t">${icono("calendar")}Próximo corte</div>
+          <div class="f">${fmt(corte)}</div>
+          <div class="d">${textoDias(diasCorte)}</div>
+        </div>
+        <div class="tc-fecha ${clasePago}">
+          <div class="t">${icono("hourglass")}Pago límite</div>
+          <div class="f">${fmt(pago)}</div>
+          <div class="d">${textoDias(diasPago)}</div>
+        </div>
+      </div>
+      <div class="tc-lineas">
+        <div class="fila-cuenta"><span>Extracto cerrado el ${fmt(ultCorte)}</span><span class="saldo">${extractoCerrado > 0 ? formatoMoneda(extractoCerrado) : "Sin saldo por pagar"}</span></div>
+        <div class="fila-cuenta"><span>Compras del ciclo en curso</span><span class="saldo">${formatoMoneda(comprasCiclo)}</span></div>
+        <div class="fila-cuenta"><span>Deuda total de la tarjeta</span><span class="saldo">${saldo > 0 ? formatoMoneda(saldo) + " a favor" : formatoMoneda(deuda)}</span></div>
+      </div>
+      ${pagoVencido ? `<div class="proy-nota alerta">⚠️ El pago límite del extracto del ${fmt(ultCorte)} fue el ${fmt(pagoUltExtracto)} y aún figura saldo por pagar. Si ya pagaste, registra el pago como transferencia a la tarjeta.</div>` : ""}`;
+  });
+  html += `</div>`;
+  return html;
+}
+
 async function cargarConsulta() {
   const cont = document.getElementById("consultar-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
@@ -936,6 +1102,9 @@ async function cargarConsulta() {
         <div class="leyenda-barra"><span>Gastado: ${formatoPorcentaje(pctGastado)}</span><span>Mes transcurrido: ${formatoPorcentaje(pctTranscurrido)}</span></div>
         <div style="font-size:13px;margin-top:6px;color:${enAlerta?'var(--rojo)':'var(--verde)'};">${resumen.EstadoRitmoGasto || ""}</div>
       </div>
+
+      ${htmlProyeccionGasto(categorias, movimientosCompletos, mesActual, pctTranscurrido)}
+      ${htmlTarjetasCredito(cuentas, movimientosCompletos)}
 
       <div class="tarjeta">
         <div class="etiqueta" style="margin-bottom:8px;text-align:center;">Composición de activos</div>
