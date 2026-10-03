@@ -194,6 +194,17 @@
   .leyenda-barra .sw.ok{background:repeating-linear-gradient(45deg,#a5d6a7,#a5d6a7 2px,#e8f5e9 2px,#e8f5e9 4px);}
   .leyenda-barra .sw.alerta{background:repeating-linear-gradient(45deg,#ef9a9a,#ef9a9a 2px,#fdecea 2px,#fdecea 4px);}
   .proy-sep{height:1px;background:var(--borde);margin:14px 0 12px;}
+  /* ---- Proyección desplegable ---- */
+  .proy-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;border-top:1px solid var(--borde);margin-top:14px;padding:12px 0 0;cursor:pointer;font-size:13px;font-weight:700;color:var(--azul-claro);text-align:left;}
+  .proy-toggle .flecha{transition:transform .15s;color:var(--texto-suave);}
+  .proy-toggle.abierto .flecha{transform:rotate(180deg);}
+  #proy-detalle{margin-top:10px;}
+  /* ---- Selector de 3 vistas en Gastos ---- */
+  .toggle-vista{gap:4px;}
+  .toggle-btn{padding:9px 2px;font-size:12px;white-space:nowrap;}
+  table.tabla-datos tr.fila-tipo-cat td{font-size:12px;color:var(--texto-suave);padding:4px 4px 4px 14px;border-bottom:none;}
+  table.tabla-datos tr.fila-tipo-cat + tr:not(.fila-tipo-cat) td{border-top:1px solid var(--borde);}
+  .punto-tipo{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
 </style>
 </head>
 <body>
@@ -727,6 +738,8 @@ const ICONO_TIPO = {
 
 let chartComposicion = null;
 let chartDistribucionGastos = null;
+let chartDistribucionTipo = null;
+let gastosPorTipoMes = null;
 let chartTendenciaGastos = null;
 let tendenciaCompleta = [];
 let patrimonioSerieCompleta = [];
@@ -923,16 +936,19 @@ function datosProyeccion(categorias, movimientos, mesStr, pct) {
   return { cerrado: false, gasto, fijo, variable, presupuesto, proyeccion, diasTrans, diasRest,
            promVariable: variable / diasTrans, pct: presupuesto > 0 ? proyeccion / presupuesto : null };
 }
-// Devuelve solo el bloque interno (sin tarjeta propia): va dentro de la tarjeta "Ritmo de gasto del mes"
+// Bloque desplegable dentro de la tarjeta "Ritmo de gasto del mes" (oculto por defecto)
 function htmlProyeccionGasto(d) {
   if (!d) return "";
   const { gasto, presupuesto, proyeccion } = d;
+  const boton = (titulo) => `<button type="button" class="proy-toggle" id="btn-proy">
+      <span>${icono("trending")}${titulo}</span><span class="flecha">▾</span></button>`;
+
   if (d.cerrado) {
     const dif = gasto - presupuesto;
-    return `<div class="proy-sep"></div>
-      <div class="etiqueta">${icono("trending")}Cierre del mes</div>
+    return boton("Cierre del mes") + `<div id="proy-detalle" class="oculto">
       <div class="proy-valor ${presupuesto > 0 && dif > 0 ? "negativo" : "positivo"}">${formatoMoneda(gasto)}</div>
-      <div class="proy-sub">${presupuesto > 0 ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "te pasaste por" : "ahorraste"} ${formatoMoneda(Math.abs(dif))}` : "Sin presupuesto cargado para este mes"}</div>`;
+      <div class="proy-sub">${presupuesto > 0 ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "te pasaste por" : "ahorraste"} ${formatoMoneda(Math.abs(dif))}` : "Sin presupuesto cargado para este mes"}</div>
+    </div>`;
   }
   const { fijo, variable, diasTrans, diasRest, promVariable } = d;
   const dif = proyeccion - presupuesto;
@@ -954,8 +970,7 @@ function htmlProyeccionGasto(d) {
     }
   }
 
-  return `<div class="proy-sep"></div>
-    <div class="etiqueta">${icono("trending")}Proyección a fin de mes</div>
+  return boton("Proyección a fin de mes") + `<div id="proy-detalle" class="oculto">
     <div class="proy-valor" style="color:${color};">${formatoMoneda(proyeccion)}</div>
     <div class="proy-sub">${presupuesto > 0
       ? `Presupuesto ${formatoMoneda(presupuesto)} · ${dif > 0 ? "excederías por" : "quedarías con"} ${formatoMoneda(Math.abs(dif))}${dif > 0 ? "" : " de margen"} (${(Math.abs(dif) / presupuesto * 100).toFixed(0)}%)`
@@ -967,7 +982,71 @@ function htmlProyeccionGasto(d) {
       <div><div class="t">Días restantes</div><div class="v">${diasRest}</div></div>
     </div>
     ${nota}
-    <div class="proy-aviso">Los gastos fijos se toman tal cual; los variables se proyectan al ritmo de los ${diasTrans} días transcurridos.${diasTrans < 7 ? " Aún es pronto en el mes: la estimación se afina con los días." : ""}</div>`;
+    <div class="proy-aviso">Los gastos fijos se toman tal cual; los variables se proyectan al ritmo de los ${diasTrans} días transcurridos.${diasTrans < 7 ? " Aún es pronto en el mes: la estimación se afina con los días." : ""}</div>
+  </div>`;
+}
+
+// ---------- Gastos por tipo (Fijo / Variable) ----------
+function gastoPorTipoMes(movimientos, mesStr) {
+  const [anio, mes] = String(mesStr || "").split("-").map(v => parseInt(v, 10));
+  const tipos = { Fijo: { total: 0, cats: {} }, Variable: { total: 0, cats: {} }, "Sin clasificar": { total: 0, cats: {} } };
+  if (!anio || !mes) return tipos;
+  movimientos.forEach(m => {
+    if (m.TipoMovimiento !== "Gasto" || !m._fecha) return;
+    if (m._fecha.getFullYear() !== anio || m._fecha.getMonth() !== mes - 1) return;
+    const v = num(m.MontoCOP) ?? num(m.Monto) ?? 0;
+    const t = (m.ClasificacionGasto === "Fijo" || m.ClasificacionGasto === "Variable") ? m.ClasificacionGasto : "Sin clasificar";
+    const cat = mapaCategorias[m.CategoriaID] || "Sin categoría";
+    tipos[t].total += v;
+    tipos[t].cats[cat] = (tipos[t].cats[cat] || 0) + v;
+  });
+  return tipos;
+}
+const COLOR_TIPO_GASTO = { Fijo: "#5A189A", Variable: "#ffa726", "Sin clasificar": "#78909c" };
+function htmlGastosPorTipo(tipos) {
+  const lista = Object.entries(tipos).filter(([, t]) => t.total > 0);
+  const total = lista.reduce((s, [, t]) => s + t.total, 0);
+  if (total <= 0) return `<div class="tarjeta"><div class="fila-cuenta"><span>Sin gastos registrados este mes</span></div></div>`;
+  let h = `<div class="tarjeta"><canvas id="grafico-distribucion-tipo" height="200"></canvas></div>`;
+  h += `<div class="tarjeta"><table class="tabla-datos"><thead><tr><th>Tipo</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
+  lista.forEach(([nombre, t]) => {
+    const pct = t.total / total * 100;
+    h += `<tr><td><span class="punto-tipo" style="background:${COLOR_TIPO_GASTO[nombre]};"></span><strong>${nombre}</strong>
+            <div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;background:${COLOR_TIPO_GASTO[nombre]};"></div></div></td>
+          <td class="num">${formatoMoneda(t.total)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
+    Object.entries(t.cats).sort((a, b) => b[1] - a[1]).forEach(([cat, v]) => {
+      h += `<tr class="fila-tipo-cat"><td>${cat}</td><td class="num">${formatoMoneda(v)}</td><td class="num">${(v / total * 100).toFixed(0)}%</td></tr>`;
+    });
+  });
+  h += `<tr style="font-weight:700;border-top:2px solid var(--borde);"><td>Gasto total del mes</td><td class="num">${formatoMoneda(total)}</td><td class="num">100%</td></tr>`;
+  h += `</tbody></table></div>`;
+  return h;
+}
+function dibujarGraficoDistribucionTipo(tipos) {
+  const canvas = document.getElementById("grafico-distribucion-tipo");
+  if (!canvas || typeof Chart === "undefined") return;
+  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
+  const lista = Object.entries(tipos).filter(([, t]) => t.total > 0);
+  const total = lista.reduce((s, [, t]) => s + t.total, 0);
+  if (chartDistribucionTipo) chartDistribucionTipo.destroy();
+  chartDistribucionTipo = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: lista.map(([n]) => n),
+      datasets: [{ data: lista.map(([, t]) => t.total), backgroundColor: lista.map(([n]) => COLOR_TIPO_GASTO[n]), borderWidth: 2, borderColor: "#fff" }]
+    },
+    options: {
+      plugins: {
+        legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } },
+        datalabels: {
+          color: "#fff", font: { weight: "bold", size: 10 },
+          formatter: (v) => total > 0 ? (v / total * 100).toFixed(0) + "%" : "",
+          display: (ctx) => ctx.dataset.data[ctx.dataIndex] / total > 0.04
+        },
+        tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatoMoneda(ctx.raw)}` } }
+      }
+    }
+  });
 }
 
 // ---------- Tarjeta de crédito: corte y pago ----------
@@ -1149,7 +1228,8 @@ async function cargarConsulta() {
     html += `<div class="subtitulo">Gastos</div>`;
     html += `
       <div class="toggle-vista">
-        <button type="button" class="toggle-btn activo" data-vista="mes">Este mes</button>
+        <button type="button" class="toggle-btn activo" data-vista="mes">Por categoría</button>
+        <button type="button" class="toggle-btn" data-vista="tipo">Por tipo de gasto</button>
         <button type="button" class="toggle-btn" data-vista="tendencia">Evolutivo</button>
       </div>`;
 
@@ -1169,6 +1249,9 @@ async function cargarConsulta() {
       html += `</tbody></table></div>`;
     }
     html += `</div>`;
+
+    gastosPorTipoMes = gastoPorTipoMes(movimientosCompletos, mesActual);
+    html += `<div id="vista-gasto-tipo" class="oculto">${htmlGastosPorTipo(gastosPorTipoMes)}</div>`;
 
     html += `<div id="vista-gasto-tendencia" class="oculto">
       <div class="tarjeta">
@@ -1267,6 +1350,11 @@ async function cargarConsulta() {
     html += htmlSeccionCDT(cuentas);
 
     cont.innerHTML = html;
+    const btnProy = document.getElementById("btn-proy");
+    if (btnProy) btnProy.addEventListener("click", () => {
+      document.getElementById("proy-detalle").classList.toggle("oculto");
+      btnProy.classList.toggle("abierto");
+    });
     document.querySelectorAll(".acordeon-header").forEach(btn => {
       btn.addEventListener("click", () => {
         const contenido = document.getElementById("acordeon-" + btn.dataset.idx);
@@ -1286,12 +1374,14 @@ async function cargarConsulta() {
       btn.addEventListener("click", () => {
         document.querySelectorAll(".toggle-btn[data-vista]").forEach(b => b.classList.remove("activo"));
         btn.classList.add("activo");
-        const esMes = btn.dataset.vista === "mes";
-        document.getElementById("vista-gasto-mes").classList.toggle("oculto", !esMes);
-        document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", esMes);
-        // El gráfico se crea recién ahora, con el contenedor ya visible — Chart.js necesita
-        // medir un tamaño real al momento de crearlo, no funciona bien si nace oculto (0x0).
-        if (!esMes) dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-parseInt(document.getElementById("slider-meses-tendencia").value)));
+        const vista = btn.dataset.vista;
+        document.getElementById("vista-gasto-mes").classList.toggle("oculto", vista !== "mes");
+        document.getElementById("vista-gasto-tipo").classList.toggle("oculto", vista !== "tipo");
+        document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", vista !== "tendencia");
+        // Los gráficos de "tipo" y "evolutivo" se crean recién ahora, con el contenedor ya visible —
+        // Chart.js necesita medir un tamaño real al momento de crearlos, no funciona bien si nacen ocultos (0x0).
+        if (vista === "tipo") dibujarGraficoDistribucionTipo(gastosPorTipoMes);
+        if (vista === "tendencia") dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-parseInt(document.getElementById("slider-meses-tendencia").value)));
       });
     });
 
