@@ -205,6 +205,26 @@
   table.tabla-datos tr.fila-tipo-cat td{font-size:12px;color:var(--texto-suave);padding:4px 4px 4px 14px;border-bottom:none;}
   table.tabla-datos tr.fila-tipo-cat + tr:not(.fila-tipo-cat) td{border-top:1px solid var(--borde);}
   .punto-tipo{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;}
+  /* ---- Dólares: equilibrio, simulador y cuentas ---- */
+  .eq-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}
+  .eq-grid > div{background:#f7f8fa;border-radius:8px;padding:9px 8px;}
+  .eq-grid .t{font-size:10px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.02em;}
+  .eq-grid .v{font-size:14px;font-weight:700;margin-top:2px;}
+  .eq-titular{font-size:15px;font-weight:700;margin-top:6px;line-height:1.3;}
+  .eq-sub{font-size:12px;color:var(--texto-suave);margin-top:3px;}
+  .sim-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .sim-chip{padding:6px 10px;border:1px solid var(--borde);border-radius:20px;background:#fff;font-size:12px;font-weight:600;color:var(--azul-claro);cursor:pointer;}
+  .sim-chip:active{background:#f3e8fb;}
+  .sim-res .fila-cuenta{padding:8px 0;font-size:13px;}
+  .sim-res .destacado{font-weight:700;font-size:15px;}
+  .usd-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borde);}
+  .usd-item:last-child{border-bottom:none;}
+  .usd-info{flex:1;min-width:0;}
+  .usd-nombre{font-weight:600;font-size:14px;}
+  .usd-tipo{font-size:11px;color:var(--texto-suave);margin-top:1px;}
+  .usd-valores{text-align:right;flex-shrink:0;}
+  .usd-valores .u{font-weight:700;font-size:14px;}
+  .usd-valores .c{font-size:11px;color:var(--texto-suave);}
 </style>
 </head>
 <body>
@@ -1702,13 +1722,133 @@ document.getElementById("btn-refrescar-historial").addEventListener("click", car
 document.getElementById("btn-refrescar-dolares").addEventListener("click", cargarDolares);
 
 // ================== TAB DÓLARES ==================
+// ---------- Dólares: equilibrio, simulador y cuentas en USD ----------
+function conSigno(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + formatoMoneda(Math.abs(n)); }
+function pctConSigno(x) {
+  const r = Math.round(Math.abs(x) * 1000) / 10;   // un decimal; evita "−0%"
+  return (r === 0 ? "" : x > 0 ? "+" : "−") + r.toLocaleString("es-CO", { maximumFractionDigits: 1 }) + "%";
+}
+function colorSigno(n) { return n > 0 ? "var(--verde)" : n < 0 ? "var(--rojo)" : "var(--texto)"; }
+function fmtUSD(n) { return n.toLocaleString("es-CO", { maximumFractionDigits: 2 }); }
+
+function htmlEquilibrioUSD(costo, trm) {
+  const cab = `<div class="etiqueta">${icono("percent")}¿Cuánto falta para quedar en cero?</div>`;
+  if (!costo || !trm) return `<div class="tarjeta">${cab}<div class="eq-sub" style="margin-top:8px;">Aún no hay compras de dólares o TRM para calcularlo.</div></div>`;
+  const brecha = costo - trm;            // >0: el dólar debe subir; <0: ya hay ganancia
+  const pctVar = trm / costo - 1;        // ganancia/pérdida porcentual sobre tu costo promedio
+  let titular, sub, color;
+  if (brecha > 0) {
+    color = "var(--rojo)";
+    titular = `El dólar debe subir ${formatoMoneda(brecha)} (${pctConSigno(costo / trm - 1)}) para quedar en cero`;
+    sub = `De ${formatoMoneda(trm)} a ${formatoMoneda(costo)}, tu costo promedio.`;
+  } else {
+    color = "var(--verde)";
+    titular = `Estás en ganancia: el dólar puede bajar ${formatoMoneda(-brecha)} (${pctConSigno(costo / trm - 1)}) antes de entrar en pérdida`;
+    sub = `Tu costo promedio es ${formatoMoneda(costo)} y la TRM está en ${formatoMoneda(trm)}.`;
+  }
+  const avance = Math.max(0, Math.min(trm / costo, 1)) * 100;
+  return `<div class="tarjeta">${cab}
+    <div class="eq-titular" style="color:${color};">${titular}</div>
+    <div class="eq-sub">${sub}</div>
+    <div class="barra-progreso" style="margin-top:12px;"><div class="relleno ${brecha > 0 ? "alerta" : "ok"}" style="width:${avance}%;"></div></div>
+    <div class="leyenda-barra"><span>TRM hoy: ${formatoMoneda(trm)}</span><span>Equilibrio: ${formatoMoneda(costo)}</span></div>
+    <div class="eq-grid">
+      <div><div class="t">TRM equilibrio</div><div class="v">${formatoMoneda(costo)}</div></div>
+      <div><div class="t">TRM de hoy</div><div class="v">${formatoMoneda(trm)}</div></div>
+      <div><div class="t">Resultado</div><div class="v" style="color:${colorSigno(pctVar)};">${pctConSigno(pctVar)}</div></div>
+    </div>
+  </div>`;
+}
+
+function htmlSimuladorUSD(trm) {
+  const inicial = trm ? Math.round(trm * 100) / 100 : "";
+  return `<div class="tarjeta">
+    <div class="etiqueta">${icono("trending")}Simulador: ¿y si la TRM llega a…?</div>
+    <div class="campo" style="margin:10px 0;">
+      <input type="number" id="sim-trm" inputmode="decimal" step="any" min="0" value="${inicial}" placeholder="TRM a simular">
+    </div>
+    <div class="sim-chips">
+      <button type="button" class="sim-chip" data-sim="-0.10">−10%</button>
+      <button type="button" class="sim-chip" data-sim="-0.05">−5%</button>
+      <button type="button" class="sim-chip" data-sim="hoy">Hoy</button>
+      <button type="button" class="sim-chip" data-sim="0.05">+5%</button>
+      <button type="button" class="sim-chip" data-sim="0.10">+10%</button>
+      <button type="button" class="sim-chip" data-sim="equilibrio">Equilibrio</button>
+    </div>
+    <div class="sim-res" id="sim-resultado"></div>
+  </div>`;
+}
+
+function activarSimuladorUSD(costo, trm, saldoUSD) {
+  const input = document.getElementById("sim-trm");
+  const res = document.getElementById("sim-resultado");
+  if (!input || !res) return;
+  const calcular = () => {
+    const t = parseFloat(String(input.value).replace(",", "."));
+    if (!isFinite(t) || t <= 0) { res.innerHTML = `<div class="eq-sub">Escribe una TRM para simular.</div>`; return; }
+    const valorSim = saldoUSD * t;
+    const valorHoy = saldoUSD * trm;
+    const cambio = valorSim - valorHoy;
+    // La TRM del campo se redondea a 2 decimales: si coincide con el equilibrio, el resultado es 0
+    const resultado = costo ? (Math.abs(t - costo) < 0.006 ? 0 : (t - costo) * saldoUSD) : null;
+    res.innerHTML = `
+      <div class="fila-cuenta"><span>Tus dólares</span><span class="saldo">${fmtUSD(saldoUSD)} USD</span></div>
+      <div class="fila-cuenta"><span>Valdrían en COP</span><span class="saldo">${formatoMoneda(valorSim)}</span></div>
+      <div class="fila-cuenta"><span>Cambio frente a hoy</span><span class="saldo" style="color:${colorSigno(cambio)};">${conSigno(cambio)}</span></div>
+      ${resultado !== null ? `<div class="fila-cuenta destacado" style="border-top:2px solid var(--borde);"><span>Resultado vs. tu costo promedio</span>
+        <span style="color:${colorSigno(resultado)};">${conSigno(resultado)} (${pctConSigno(resultado === 0 ? 0 : t / costo - 1)})</span></div>` : ""}`;
+  };
+  input.addEventListener("input", calcular);
+  document.querySelectorAll(".sim-chip").forEach(btn => btn.addEventListener("click", () => {
+    const v = btn.dataset.sim;
+    let t = trm;
+    if (v === "equilibrio") { if (!costo) return; t = costo; }
+    else if (v !== "hoy") t = trm * (1 + parseFloat(v));
+    input.value = Math.round(t * 100) / 100;
+    calcular();
+  }));
+  calcular();
+}
+
+function htmlCuentasUSD(cuentas, trm) {
+  const lista = cuentas
+    .filter(c => c.Moneda === "USD" && (c.Estado === "Activo" || !c.Estado))
+    .map(c => ({ c, saldo: num(c.SaldoActual) || 0 }))
+    .filter(x => x.saldo !== 0)
+    .sort((a, b) => b.saldo - a.saldo);
+  if (lista.length === 0) return "";
+  const total = lista.reduce((s, x) => s + x.saldo, 0);
+  let h = `<div class="subtitulo">Cuentas en dólares</div>
+    <div class="acordeon">
+      <button type="button" class="acordeon-header" data-idx="usd">
+        <span class="titulo">${icono("dollar")}Mis cuentas en USD (${lista.length})</span>
+        <span class="subtotal">${fmtUSD(total)} USD</span>
+        <span class="flecha">▾</span>
+      </button>
+      <div class="acordeon-contenido oculto" id="acordeon-usd">`;
+  lista.forEach(({ c, saldo }) => {
+    const pct = total > 0 ? saldo / total * 100 : 0;
+    h += `<div class="usd-item">
+        <div class="usd-info">
+          <div class="usd-nombre">${icono(ICONO_TIPO[c.TipoCuenta] || "wallet")}${c.Nombre}</div>
+          <div class="usd-tipo">${NOMBRE_TIPO[c.TipoCuenta] || c.TipoCuenta || ""} · ${pct.toFixed(0)}% del total</div>
+          <div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div>
+        </div>
+        <div class="usd-valores"><div class="u">${fmtUSD(saldo)} USD</div>${trm ? `<div class="c">≈ ${formatoMoneda(saldo * trm)} COP</div>` : ""}</div>
+      </div>`;
+  });
+  h += `</div></div>`;
+  return h;
+}
+
 async function cargarDolares() {
   const cont = document.getElementById("dolares-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const [movs, indicadores] = await Promise.all([
+    const [movs, indicadores, cuentasTodas] = await Promise.all([
       leerTabla("tbl_Movimientos"),
-      leerRangoDashboard("B16:B19")  // B16 CostoPromedio, B17 TRM del día, B18 Saldo USD, B19 Ganancia/pérdida latente
+      leerRangoDashboard("B16:B19"),  // B16 CostoPromedio, B17 TRM del día, B18 Saldo USD, B19 Ganancia/pérdida latente
+      leerTabla("tbl_Cuentas")
     ]);
     const [costoPromedio, trmDia, saldoUSD, gananciaLatente] = indicadores.map(fila => num(fila[0]));
 
@@ -1728,6 +1868,8 @@ async function cargarDolares() {
     const ganancias = movs
       .filter(m => m.TipoMovimiento === "ActualizacionValor" && m.MonedaCuentaDestino === "USD")
       .reduce((s,m) => s + (num(m.ImpactoDestino)||0), 0);
+    const saldoParaSim = saldoUSD !== null ? saldoUSD
+      : cuentasTodas.filter(c => c.Moneda === "USD" && (c.Estado === "Activo" || !c.Estado)).reduce((s, c) => s + (num(c.SaldoActual) || 0), 0);
     const otrosMovimientos = saldoUSD !== null ? saldoUSD - posicionNeta - ganancias : null;
 
     let html = `
@@ -1737,6 +1879,10 @@ async function cargarDolares() {
         <div class="tarjeta"><div class="etiqueta">${icono("wallet")}Saldo total en USD</div><div class="valor">${saldoUSD!==null?saldoUSD.toLocaleString("es-CO",{maximumFractionDigits:2}):"—"}</div></div>
         <div class="tarjeta"><div class="etiqueta">${icono("percent")}Ganancia/pérdida latente</div><div class="valor ${gananciaLatente!==null && gananciaLatente<0?"negativo":"positivo"}">${formatoMoneda(gananciaLatente)}</div></div>
       </div>
+
+      ${htmlEquilibrioUSD(costoPromedio, trmDia)}
+      ${htmlSimuladorUSD(trmDia)}
+      ${htmlCuentasUSD(cuentasTodas, trmDia)}
 
       <div class="subtitulo">Comprado vs. vendido (histórico)</div>
       <div class="tarjeta">
@@ -1769,6 +1915,13 @@ async function cargarDolares() {
     html += `</div>`;
 
     cont.innerHTML = html;
+    if (trmDia) activarSimuladorUSD(costoPromedio, trmDia, saldoParaSim);
+    document.querySelectorAll("#dolares-contenido .acordeon-header").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("acordeon-" + btn.dataset.idx).classList.toggle("oculto");
+        btn.classList.toggle("abierto");
+      });
+    });
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
