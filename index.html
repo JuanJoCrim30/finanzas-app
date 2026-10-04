@@ -225,6 +225,25 @@
   .usd-valores{text-align:right;flex-shrink:0;}
   .usd-valores .u{font-weight:700;font-size:14px;}
   .usd-valores .c{font-size:11px;color:var(--texto-suave);}
+  /* ---- Historial: búsqueda y filtros ---- */
+  .hist-barra{display:flex;gap:8px;margin-bottom:10px;}
+  .hist-barra input{flex:1;min-width:0;padding:11px;border:1px solid var(--borde);border-radius:8px;font-size:15px;background:#fff;}
+  .hist-btn-filtros{position:relative;padding:0 14px;border:1px solid var(--borde);border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:var(--azul-claro);cursor:pointer;white-space:nowrap;}
+  .hist-btn-filtros.abierto{background:#f3e8fb;border-color:var(--azul-claro);}
+  .hist-badge{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:var(--azul-claro);color:#fff;font-size:11px;text-align:center;margin-left:6px;padding:0 5px;}
+  .hist-panel{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .hist-grupo{margin-bottom:12px;}
+  .hist-grupo:last-child{margin-bottom:0;}
+  .hist-grupo > label{display:block;font-size:11px;font-weight:700;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;}
+  .hist-grupo select, .hist-grupo input[type=date]{width:100%;padding:10px;border:1px solid var(--borde);border-radius:8px;font-size:14px;background:#fff;}
+  .hist-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .hist-chip{padding:6px 11px;border:1px solid var(--borde);border-radius:20px;background:#fff;font-size:12px;font-weight:600;color:var(--texto);cursor:pointer;}
+  .hist-chip.activo{background:var(--azul-claro);border-color:var(--azul-claro);color:#fff;}
+  .hist-fechas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+  .hist-resumen{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--texto-suave);margin:2px 2px 8px;}
+  .hist-resumen strong{color:var(--texto);}
+  .hist-link{background:none;border:none;color:var(--azul-claro);font-size:12px;font-weight:700;cursor:pointer;padding:0;}
+  .hist-mas{width:100%;margin-top:4px;padding:11px;border:1px solid var(--borde);border-radius:8px;background:#fff;color:var(--azul-claro);font-weight:700;font-size:13px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -350,7 +369,7 @@
   <!-- ===== TAB HISTORIAL ===== -->
   <section id="tab-historial" class="tab">
     <button class="refrescar" id="btn-refrescar-historial">↻ Actualizar</button>
-    <div class="subtitulo" style="margin-top:0;">Últimos 20 movimientos</div>
+    <div class="subtitulo" style="margin-top:0;">Movimientos</div>
     <div id="historial-contenido">
       <div class="estado-carga">Cargando...</div>
     </div>
@@ -1719,7 +1738,7 @@ function formatoFechaCorta(d) {
   return d.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
 }
 
-document.getElementById("btn-refrescar-historial").addEventListener("click", cargarHistorial);
+document.getElementById("btn-refrescar-historial").addEventListener("click", () => cargarHistorial(true)); // conserva los filtros
 document.getElementById("btn-refrescar-dolares").addEventListener("click", cargarDolares);
 
 // ================== TAB DÓLARES ==================
@@ -1929,52 +1948,203 @@ async function cargarDolares() {
   }
 }
 
-async function cargarHistorial() {
+// ---------- Historial con búsqueda y filtros ----------
+const HIST_PAGINA = 20;
+const HIST_ORDEN_TIPOS = ["Gasto", "Ingreso", "Transferencia", "PagoDeuda", "CompraUSD", "VentaUSD", "ActualizacionValor"];
+function estadoHistInicial() { return { texto: "", tipos: new Set(), cuenta: "", categoria: "", periodo: "todo", desde: "", hasta: "", limite: HIST_PAGINA, panel: false }; }
+let estadoHist = estadoHistInicial();
+let movsHist = [];
+
+function normTexto(t) { return String(t == null ? "" : t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+function fechaDeInput(v) { if (!v) return null; const [a, m, d] = v.split("-").map(Number); return a ? new Date(a, m - 1, d) : null; }
+
+function rangoPeriodoHist() {
+  const h = new Date(), y = h.getFullYear(), m = h.getMonth(), d = h.getDate();
+  switch (estadoHist.periodo) {
+    case "mes":       return [new Date(y, m, 1), new Date(y, m + 1, 0)];
+    case "mespasado": return [new Date(y, m - 1, 1), new Date(y, m, 0)];
+    case "30":        return [new Date(y, m, d - 29), new Date(y, m, d)];
+    case "anio":      return [new Date(y, 0, 1), new Date(y, 11, 31)];
+    case "custom":    return [fechaDeInput(estadoHist.desde), fechaDeInput(estadoHist.hasta)];
+    default:          return [null, null];
+  }
+}
+function filtrosActivosHist() {
+  return (estadoHist.tipos.size ? 1 : 0) + (estadoHist.cuenta ? 1 : 0) + (estadoHist.categoria ? 1 : 0) + (estadoHist.periodo !== "todo" ? 1 : 0);
+}
+function filtrarMovsHist() {
+  const q = normTexto(estadoHist.texto).trim();
+  const palabras = q ? q.split(/\s+/) : [];
+  const [desde, hasta0] = rangoPeriodoHist();
+  const hasta = hasta0 ? new Date(hasta0.getFullYear(), hasta0.getMonth(), hasta0.getDate(), 23, 59, 59, 999) : null;
+  return movsHist.filter(f => {
+    if (estadoHist.tipos.size && !estadoHist.tipos.has(f.TipoMovimiento)) return false;
+    if (estadoHist.cuenta && f.CuentaOrigen !== estadoHist.cuenta && f.CuentaDestino !== estadoHist.cuenta) return false;
+    if (estadoHist.categoria && f.CategoriaID !== estadoHist.categoria) return false;
+    if (desde || hasta) {
+      const fe = f._fechaParseada;
+      if (!fe) return false;
+      if (desde && fe < desde) return false;
+      if (hasta && fe > hasta) return false;
+    }
+    return palabras.every(w => f._busqueda.includes(w)); // todas las palabras deben aparecer
+  });
+}
+
+function htmlItemMov(f) {
+  const esNegativo = f.TipoMovimiento === "Gasto" || f.TipoMovimiento === "PagoDeuda";
+  return `
+    <div class="mov-item">
+      <div class="mov-top">
+        <span class="mov-badge ${f.TipoMovimiento || ""}">${f.TipoMovimiento || "—"}</span>
+        <span class="mov-monto ${esNegativo ? "negativo" : ""}">${esNegativo ? "-" : ""}${formatoMoneda(f.Monto)} ${f.Moneda || ""}</span>
+      </div>
+      <div class="mov-detalle">${f._detalle || "—"}</div>
+      <div class="mov-fecha">${formatoFechaCorta(f._fechaParseada)}</div>
+    </div>`;
+}
+
+function actualizarListaHist() {
+  const lista = document.getElementById("hist-lista");
+  const resumen = document.getElementById("hist-resumen");
+  if (!lista || !resumen) return;
+  const res = filtrarMovsHist();
+  const hayFiltros = filtrosActivosHist() > 0 || estadoHist.texto.trim() !== "";
+
+  let ingresos = 0, gastos = 0;
+  res.forEach(f => {
+    const v = num(f.MontoCOP) ?? num(f.Monto) ?? 0;
+    if (f.TipoMovimiento === "Ingreso") ingresos += v;
+    else if (f.TipoMovimiento === "Gasto") gastos += v;
+  });
+  const partes = [`<strong>${res.length}</strong> ${res.length === 1 ? "movimiento" : "movimientos"}`];
+  if (ingresos > 0) partes.push(`Ingresos <strong style="color:var(--verde)">+${formatoMoneda(ingresos)}</strong>`);
+  if (gastos > 0) partes.push(`Gastos <strong style="color:var(--rojo)">−${formatoMoneda(gastos)}</strong>`);
+  resumen.innerHTML = `<span>${partes.join(" · ")}</span>${hayFiltros ? `<button type="button" class="hist-link" id="hist-limpiar">Limpiar filtros</button>` : ""}`;
+  const lim = document.getElementById("hist-limpiar");
+  if (lim) lim.addEventListener("click", () => { const panel = estadoHist.panel; estadoHist = estadoHistInicial(); estadoHist.panel = panel; renderControlesHist(); actualizarListaHist(); });
+
+  if (res.length === 0) {
+    lista.innerHTML = `<div class="tarjeta"><div class="estado-carga">Ningún movimiento coincide con los filtros.</div></div>`;
+    return;
+  }
+  const visibles = res.slice(0, estadoHist.limite);
+  let h = `<div class="tarjeta">${visibles.map(htmlItemMov).join("")}</div>`;
+  if (res.length > visibles.length) h += `<button type="button" class="hist-mas" id="hist-mas">Ver más (${res.length - visibles.length} restantes)</button>`;
+  lista.innerHTML = h;
+  const mas = document.getElementById("hist-mas");
+  if (mas) mas.addEventListener("click", () => { estadoHist.limite += HIST_PAGINA; actualizarListaHist(); });
+}
+
+function renderControlesHist() {
+  const cont = document.getElementById("hist-controles");
+  if (!cont) return;
+  // Opciones según lo que realmente existe en los movimientos
+  const tiposPresentes = [...new Set(movsHist.map(f => f.TipoMovimiento).filter(Boolean))]
+    .sort((a, b) => (HIST_ORDEN_TIPOS.indexOf(a) + 1 || 99) - (HIST_ORDEN_TIPOS.indexOf(b) + 1 || 99));
+  const idsCuentas = new Set();
+  movsHist.forEach(f => { if (f.CuentaOrigen) idsCuentas.add(f.CuentaOrigen); if (f.CuentaDestino) idsCuentas.add(f.CuentaDestino); });
+  const cuentasOpc = [...idsCuentas].map(id => [id, mapaCuentas[id] || id]).sort((a, b) => a[1].localeCompare(b[1], "es"));
+  const idsCats = new Set(movsHist.map(f => f.CategoriaID).filter(Boolean));
+  const catsOpc = [...idsCats].map(id => [id, mapaCategorias[id] || id]).sort((a, b) => a[1].localeCompare(b[1], "es"));
+  if (estadoHist.cuenta && !idsCuentas.has(estadoHist.cuenta)) estadoHist.cuenta = "";
+  if (estadoHist.categoria && !idsCats.has(estadoHist.categoria)) estadoHist.categoria = "";
+
+  const periodos = [["todo", "Todo"], ["mes", "Este mes"], ["mespasado", "Mes pasado"], ["30", "Últimos 30 días"], ["anio", "Este año"], ["custom", "Personalizado"]];
+  const n = filtrosActivosHist();
+  cont.innerHTML = `
+    <div class="hist-barra">
+      <input type="search" id="hist-buscar" placeholder="Buscar movimientos…" value="${estadoHist.texto.replace(/"/g, "&quot;")}" autocomplete="off">
+      <button type="button" class="hist-btn-filtros ${estadoHist.panel ? "abierto" : ""}" id="hist-btn-filtros">Filtros${n ? `<span class="hist-badge">${n}</span>` : ""}</button>
+    </div>
+    <div class="hist-panel ${estadoHist.panel ? "" : "oculto"}" id="hist-panel">
+      <div class="hist-grupo"><label>Tipo de movimiento</label>
+        <div class="hist-chips">${tiposPresentes.map(t => `<button type="button" class="hist-chip ${estadoHist.tipos.has(t) ? "activo" : ""}" data-tipo="${t}">${t}</button>`).join("")}</div>
+      </div>
+      <div class="hist-grupo"><label>Período</label>
+        <select id="hist-periodo">${periodos.map(([v, t]) => `<option value="${v}" ${estadoHist.periodo === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <div class="hist-fechas ${estadoHist.periodo === "custom" ? "" : "oculto"}" id="hist-fechas">
+          <input type="date" id="hist-desde" value="${estadoHist.desde}" aria-label="Desde">
+          <input type="date" id="hist-hasta" value="${estadoHist.hasta}" aria-label="Hasta">
+        </div>
+      </div>
+      <div class="hist-grupo"><label>Cuenta</label>
+        <select id="hist-cuenta"><option value="">Todas las cuentas</option>${cuentasOpc.map(([id, nm]) => `<option value="${id}" ${estadoHist.cuenta === id ? "selected" : ""}>${nm}</option>`).join("")}</select>
+      </div>
+      <div class="hist-grupo"><label>Categoría</label>
+        <select id="hist-categoria"><option value="">Todas las categorías</option>${catsOpc.map(([id, nm]) => `<option value="${id}" ${estadoHist.categoria === id ? "selected" : ""}>${nm}</option>`).join("")}</select>
+      </div>
+    </div>`;
+
+  const refrescar = () => { estadoHist.limite = HIST_PAGINA; actualizarListaHist(); actualizarBadgeHist(); };
+  let tBuscar = null;
+  document.getElementById("hist-buscar").addEventListener("input", e => {
+    clearTimeout(tBuscar);
+    tBuscar = setTimeout(() => { estadoHist.texto = e.target.value; refrescar(); }, 150);
+  });
+  document.getElementById("hist-btn-filtros").addEventListener("click", () => {
+    estadoHist.panel = !estadoHist.panel;
+    document.getElementById("hist-panel").classList.toggle("oculto", !estadoHist.panel);
+    document.getElementById("hist-btn-filtros").classList.toggle("abierto", estadoHist.panel);
+  });
+  cont.querySelectorAll(".hist-chip").forEach(b => b.addEventListener("click", () => {
+    const t = b.dataset.tipo;
+    if (estadoHist.tipos.has(t)) estadoHist.tipos.delete(t); else estadoHist.tipos.add(t);
+    b.classList.toggle("activo", estadoHist.tipos.has(t));
+    refrescar();
+  }));
+  document.getElementById("hist-periodo").addEventListener("change", e => {
+    estadoHist.periodo = e.target.value;
+    document.getElementById("hist-fechas").classList.toggle("oculto", estadoHist.periodo !== "custom");
+    refrescar();
+  });
+  document.getElementById("hist-desde").addEventListener("change", e => { estadoHist.desde = e.target.value; refrescar(); });
+  document.getElementById("hist-hasta").addEventListener("change", e => { estadoHist.hasta = e.target.value; refrescar(); });
+  document.getElementById("hist-cuenta").addEventListener("change", e => { estadoHist.cuenta = e.target.value; refrescar(); });
+  document.getElementById("hist-categoria").addEventListener("change", e => { estadoHist.categoria = e.target.value; refrescar(); });
+}
+function actualizarBadgeHist() {
+  const btn = document.getElementById("hist-btn-filtros");
+  if (!btn) return;
+  const n = filtrosActivosHist();
+  btn.innerHTML = `Filtros${n ? `<span class="hist-badge">${n}</span>` : ""}`;
+}
+
+async function cargarHistorial(conservarFiltros) {
   const cont = document.getElementById("historial-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
     const filas = (await leerTabla("tbl_Movimientos")).filter(f => f.Fecha);
 
-    filas.forEach((f, i) => { f._fechaParseada = parsearFechaExcel(f.Fecha); f._orden = i; });
+    filas.forEach((f, i) => {
+      f._fechaParseada = parsearFechaExcel(f.Fecha); f._orden = i;
+      const nombreOrigen = mapaCuentas[f.CuentaOrigen] || f.CuentaOrigen || "";
+      const nombreDestino = mapaCuentas[f.CuentaDestino] || f.CuentaDestino || "";
+      const cuentasTexto = (nombreOrigen && nombreDestino) ? `${nombreOrigen} → ${nombreDestino}` : (nombreOrigen || nombreDestino || "");
+      let categoriaTexto = "";
+      if (f.SubcategoriaID) categoriaTexto = mapaSubcategorias[f.SubcategoriaID] || f.SubcategoriaID;
+      else if (f.CategoriaID) categoriaTexto = mapaCategorias[f.CategoriaID] || f.CategoriaID;
+      f._detalle = [cuentasTexto, categoriaTexto, f.Descripcion].filter(Boolean).join(" · ");
+      // Texto en el que busca el cuadro de búsqueda (sin tildes ni mayúsculas)
+      f._busqueda = normTexto([f.TipoMovimiento, nombreOrigen, nombreDestino, categoriaTexto, mapaCategorias[f.CategoriaID], f.Descripcion, f.Monto].filter(v => v != null && v !== "").join(" "));
+    });
     filas.sort((a, b) => {
       const diffFecha = (b._fechaParseada || 0) - (a._fechaParseada || 0);
       if (diffFecha !== 0) return diffFecha;
       return b._orden - a._orden; // mismo día -> el registrado más tarde aparece primero
     });
-    const ultimos = filas.slice(0, 20);
 
-    if (ultimos.length === 0) {
+    if (filas.length === 0) {
       cont.innerHTML = '<div class="estado-carga">Aún no has registrado movimientos.</div>';
       return;
     }
+    movsHist = filas;
+    if (!conservarFiltros) estadoHist = estadoHistInicial();
+    estadoHist.limite = HIST_PAGINA;
 
-    let html = '<div class="tarjeta">';
-    ultimos.forEach(f => {
-      const nombreOrigen = mapaCuentas[f.CuentaOrigen] || f.CuentaOrigen || "";
-      const nombreDestino = mapaCuentas[f.CuentaDestino] || f.CuentaDestino || "";
-      let cuentasTexto = "";
-      if (nombreOrigen && nombreDestino) cuentasTexto = `${nombreOrigen} → ${nombreDestino}`;
-      else cuentasTexto = nombreOrigen || nombreDestino || "";
-
-      let categoriaTexto = "";
-      if (f.SubcategoriaID) categoriaTexto = mapaSubcategorias[f.SubcategoriaID] || f.SubcategoriaID;
-      else if (f.CategoriaID) categoriaTexto = mapaCategorias[f.CategoriaID] || f.CategoriaID;
-
-      const detalles = [cuentasTexto, categoriaTexto, f.Descripcion].filter(Boolean).join(" · ");
-      const esNegativo = f.TipoMovimiento === "Gasto" || f.TipoMovimiento === "PagoDeuda";
-
-      html += `
-        <div class="mov-item">
-          <div class="mov-top">
-            <span class="mov-badge ${f.TipoMovimiento || ""}">${f.TipoMovimiento || "—"}</span>
-            <span class="mov-monto ${esNegativo ? "negativo" : ""}">${esNegativo ? "-" : ""}${formatoMoneda(f.Monto)} ${f.Moneda || ""}</span>
-          </div>
-          <div class="mov-detalle">${detalles || "—"}</div>
-          <div class="mov-fecha">${formatoFechaCorta(f._fechaParseada)}</div>
-        </div>`;
-    });
-    html += "</div>";
-    cont.innerHTML = html;
+    cont.innerHTML = '<div id="hist-controles"></div><div id="hist-resumen" class="hist-resumen"></div><div id="hist-lista"></div>';
+    renderControlesHist();
+    actualizarListaHist();
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
