@@ -1236,8 +1236,8 @@ async function cargarConsulta() {
 
       ${htmlTarjetasCredito(cuentas, movimientosCompletos)}
 
+      <div class="subtitulo">Composición de activos</div>
       <div class="tarjeta">
-        <div class="etiqueta" style="margin-bottom:8px;text-align:center;">Composición de activos</div>
         <canvas id="grafico-composicion" height="200"></canvas>
       </div>
     `;
@@ -1398,8 +1398,9 @@ async function cargarConsulta() {
         document.getElementById("vista-gasto-mes").classList.toggle("oculto", vista !== "mes");
         document.getElementById("vista-gasto-tipo").classList.toggle("oculto", vista !== "tipo");
         document.getElementById("vista-gasto-tendencia").classList.toggle("oculto", vista !== "tendencia");
-        // Los gráficos de "tipo" y "evolutivo" se crean recién ahora, con el contenedor ya visible —
+        // Los gráficos de "categoría", "tipo" y "evolutivo" se (re)crean al abrir la vista, con el contenedor ya visible —
         // Chart.js necesita medir un tamaño real al momento de crearlos, no funciona bien si nacen ocultos (0x0).
+        if (vista === "mes") dibujarGraficoDistribucionGastos(conGasto);
         if (vista === "tipo") dibujarGraficoDistribucionTipo(gastosPorTipoMes);
         if (vista === "tendencia") dibujarGraficoTendenciaGastos(tendenciaCompleta.slice(-parseInt(document.getElementById("slider-meses-tendencia").value)));
       });
