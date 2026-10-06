@@ -244,6 +244,22 @@
   .hist-resumen strong{color:var(--texto);}
   .hist-link{background:none;border:none;color:var(--azul-claro);font-size:12px;font-weight:700;cursor:pointer;padding:0;}
   .hist-mas{width:100%;margin-top:4px;padding:11px;border:1px solid var(--borde);border-radius:8px;background:#fff;color:var(--azul-claro);font-weight:700;font-size:13px;cursor:pointer;}
+  /* ---- Metas de ahorro ---- */
+  .meta-item{padding:12px 0;border-bottom:1px solid var(--borde);}
+  .meta-item:last-child{border-bottom:none;}
+  .meta-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .meta-nombre{font-weight:700;font-size:14px;display:flex;align-items:center;min-width:0;}
+  .meta-pct{font-weight:700;font-size:15px;color:var(--azul-claro);flex-shrink:0;}
+  .meta-item.cumplida .meta-pct{color:var(--verde);}
+  .meta-barra{height:10px;background:#eceff1;border-radius:6px;overflow:hidden;margin:8px 0 6px;}
+  .meta-barra > div{height:100%;background:var(--azul-claro);border-radius:6px;}
+  .meta-item.cumplida .meta-barra > div{background:var(--verde);}
+  .meta-linea{display:flex;justify-content:space-between;gap:8px;font-size:13px;}
+  .meta-linea .falta{color:var(--texto-suave);text-align:right;}
+  .meta-sub{font-size:12px;color:var(--texto-suave);margin-top:4px;}
+  .meta-aviso{font-size:12px;margin-top:6px;padding:7px 9px;border-radius:8px;background:#f7f8fa;}
+  .meta-aviso.ok{background:#e8f5e9;color:#1b5e20;}
+  .meta-aviso.alerta{background:#fdecea;color:#8e1b1b;}
 </style>
 </head>
 <body>
@@ -731,6 +747,7 @@ const ICONOS_SVG = {
   bank: '<path d="M3 21h18M5 21V10M19 21V10M3 10l9-6 9 6M9 21v-6h6v6"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  flag: '<path d="M4 22V4"/><path d="M4 4h13l-2.5 4L17 12H4"/>',
   hourglass: '<path d="M6 2h12M6 22h12M7 2v4a5 5 0 0 0 2 4l3 2-3 2a5 5 0 0 0-2 4v4M17 2v4a5 5 0 0 1-2 4l-3 2 3 2a5 5 0 0 1 2 4v4"/>'
 };
 function icono(nombre) {
@@ -1160,11 +1177,158 @@ function htmlTarjetasCredito(cuentas, movimientos, hoyRef) {
   return html;
 }
 
+// ---------- Metas de ahorro ----------
+// Las metas se administran en el Excel: hoja "Metas" con la tabla tbl_Metas.
+// Este listado SOLO se usa de respaldo si esa tabla no existe o está vacía.
+// Reglas de cada meta (llena UNA o varias; si hay varias, se suman las cuentas de todas):
+//   cuentas: ["ID1","ID2"]  -> cuentas específicas (columna CuentaID de la hoja Cuentas)
+//   institucion: "NU"        -> todos los productos de esa institución (columna InstitucionID)
+//   monedaCuentas: "USD"     -> todas las cuentas de esa moneda
+const METAS_POR_DEFECTO = [
+  { id: "cuota_apto", nombre: "Cuota inicial apto",                   objetivo: 20000000, moneda: "COP", fecha: "2027-12-31", cuentas: ["TYBA_FONDO_PENSION_VOLUNTARIO"] },
+  { id: "viajes",     nombre: "Próximos viajes",                      objetivo: 10000000, moneda: "COP", fecha: "2027-10-31", institucion: "NU" },
+  { id: "emergencia", nombre: "Fondo de emergencia",                  objetivo: 8000000,  moneda: "COP", fecha: "2027-05-30", institucion: "LULO_BANK" },
+  { id: "dolares",    nombre: "Meta dólares",                         objetivo: 3000,     moneda: "USD", fecha: "2027-05-30", monedaCuentas: "USD" },
+  { id: "conciertos", nombre: "Fondo para conciertos y experiencias", objetivo: 5000000,  moneda: "COP", fecha: "2027-07-31", institucion: "PIBANK" }
+];
+
+// Convierte las filas de tbl_Metas (Excel) al formato interno
+function metasDesdeExcel(filas) {
+  const lim = (v) => String(v == null ? "" : v).trim();
+  const lista = (v) => lim(v).split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+  return filas.map(f => {
+    const nombre = lim(f.Nombre), objetivo = num(f.MontoObjetivo);
+    if (!nombre || !objetivo || objetivo <= 0) return null;       // fila vacía o incompleta
+    const e = normTexto(f.Estado);
+    const cuentas = lista(f.Cuentas);
+    return {
+      id: lim(f.MetaID) || nombre, nombre, objetivo,
+      moneda: lim(f.Moneda).toUpperCase() === "USD" ? "USD" : "COP",
+      fecha: parsearFechaExcel(f.FechaObjetivo),                   // opcional
+      estado: e.startsWith("pausa") ? "Pausada" : e.startsWith("cumpl") ? "Cumplida" : "Activa",
+      cuentas: cuentas.length ? cuentas : null,
+      institucion: lim(f.Institucion) || null,
+      monedaCuentas: lim(f.MonedaCuentas).toUpperCase() || null
+    };
+  }).filter(Boolean);
+}
+function resolverMetas(filasMetas) {
+  const desdeExcel = Array.isArray(filasMetas) ? metasDesdeExcel(filasMetas) : [];
+  return desdeExcel.length > 0 ? desdeExcel : METAS_POR_DEFECTO.map(m => ({ ...m, estado: "Activa" }));
+}
+
+function cuentasDeMeta(meta, cuentas) {
+  const up = (v) => String(v == null ? "" : v).trim().toUpperCase();
+  const ids = meta.cuentas ? meta.cuentas.map(up) : [];
+  return cuentas.filter(c => (c.Estado === "Activo" || !c.Estado) && (
+    ids.includes(up(c.CuentaID)) ||
+    (meta.institucion && up(c.InstitucionID) === up(meta.institucion)) ||
+    (meta.monedaCuentas && up(c.Moneda) === up(meta.monedaCuentas))));
+}
+function convMoneda(valor, desde, hacia, trm) {
+  if (desde === hacia) return valor;
+  if (!trm) return null;
+  if (desde === "USD" && hacia === "COP") return valor * trm;
+  if (desde === "COP" && hacia === "USD") return valor / trm;
+  return null;
+}
+function fmtMeta(v, moneda) { return moneda === "USD" ? `${fmtUSD(v)} USD` : `${formatoMoneda(v)} COP`; }
+function numMeta(v, moneda) { return moneda === "USD" ? fmtUSD(v) : formatoMoneda(v); } // sin la sigla de moneda
+
+function calcularMeta(meta, cuentas, movimientos, trm) {
+  const lista = cuentasDeMeta(meta, cuentas);
+  const porId = {}; lista.forEach(c => { porId[c.CuentaID] = c; });
+  let saldo = 0;
+  lista.forEach(c => { const v = convMoneda(num(c.SaldoActual) || 0, c.Moneda, meta.moneda, trm); if (v !== null) saldo += v; });
+  // Rendimiento acumulado = suma de tus ActualizacionValor sobre esas cuentas
+  let rend = 0;
+  movimientos.forEach(m => {
+    if (m.TipoMovimiento !== "ActualizacionValor" || !porId[m.CuentaDestino]) return;
+    const v = convMoneda(num(m.ImpactoDestino) || 0, porId[m.CuentaDestino].Moneda, meta.moneda, trm);
+    if (v !== null) rend += v;
+  });
+  const fecha = meta.fecha instanceof Date ? meta.fecha : parsearFechaExcel(meta.fecha);   // opcional
+  const dias = fecha ? diasHasta(fecha) : null;
+  return { meta, lista, saldo, rend, fecha, dias, falta: Math.max(0, meta.objetivo - saldo),
+           pct: meta.objetivo > 0 ? saldo / meta.objetivo : 0, cumplida: saldo >= meta.objetivo };
+}
+
+function htmlItemMeta(r) {
+  const { meta, lista, saldo, rend, fecha, dias, falta, pct, cumplida } = r;
+  const fechaTxt = fecha ? fecha.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }) : "";
+  let aviso = "";
+  if (lista.length === 0) {
+    aviso = `<div class="meta-aviso alerta">Esta meta no tiene cuentas asociadas. En la hoja Metas llena Cuentas, Institucion o MonedaCuentas.</div>`;
+  } else if (cumplida) {
+    aviso = `<div class="meta-aviso ok">✅ ¡Meta cumplida!${saldo > meta.objetivo ? ` Superaste el objetivo por ${fmtMeta(saldo - meta.objetivo, meta.moneda)}.` : ""}</div>`;
+  } else if (dias !== null && dias < 0) {
+    aviso = `<div class="meta-aviso alerta">El plazo venció hace ${Math.abs(dias)} ${Math.abs(dias) === 1 ? "día" : "días"} y aún faltan ${fmtMeta(falta, meta.moneda)}.</div>`;
+  } else if (dias !== null) {
+    const meses = dias / 30.44;
+    aviso = meses >= 1
+      ? `<div class="meta-aviso">Para llegar a tiempo necesitas ahorrar ≈ <strong>${fmtMeta(falta / meses, meta.moneda)}</strong> al mes.</div>`
+      : `<div class="meta-aviso alerta">Queda menos de un mes y te faltan ${fmtMeta(falta, meta.moneda)}.</div>`;
+  }
+  const plazo = cumplida ? "" : (fecha
+    ? (dias >= 0 ? `Meta: ${fechaTxt} · faltan ${dias} ${dias === 1 ? "día" : "días"}${plazoAproximado(dias) ? ` (${plazoAproximado(dias)})` : ""}` : `Meta: ${fechaTxt}`)
+    : "Sin fecha objetivo");
+  const nombres = lista.map(c => c.Nombre);
+  const incluye = nombres.length === 0 ? "Sin cuentas activas asociadas"
+    : "Incluye: " + (nombres.length > 4 ? nombres.slice(0, 4).join(", ") + ` y ${nombres.length - 4} más` : nombres.join(", "));
+  return `<div class="meta-item ${cumplida ? "cumplida" : ""}">
+      <div class="meta-top">
+        <div class="meta-nombre">${icono("flag")}${meta.nombre}</div>
+        <div class="meta-pct">${Math.min(pct * 100, 999).toFixed(0)}%</div>
+      </div>
+      <div class="meta-barra"><div style="width:${Math.min(Math.max(pct, 0), 1) * 100}%;"></div></div>
+      <div class="meta-linea">
+        <span><strong>${numMeta(saldo, meta.moneda)}</strong> de ${fmtMeta(meta.objetivo, meta.moneda)}</span>
+        ${cumplida ? "" : `<span class="falta">Faltan ${fmtMeta(falta, meta.moneda)}</span>`}
+      </div>
+      ${rend !== 0 ? `<div class="meta-sub">Pusiste ${fmtMeta(saldo - rend, meta.moneda)} + rindió <span style="color:${colorSigno(rend)};font-weight:700;">${rend > 0 ? "+" : "−"}${fmtMeta(Math.abs(rend), meta.moneda)}</span></div>` : ""}
+      ${plazo ? `<div class="meta-sub">${plazo}</div>` : ""}
+      ${aviso}
+      <div class="meta-sub">${incluye}</div>
+    </div>`;
+}
+
+// Meta que marcaste como "Cumplida" en el Excel: ya usaste la plata, así que no se calcula contra saldos
+function htmlItemMetaCerrada(meta) {
+  const fecha = meta.fecha instanceof Date ? meta.fecha : parsearFechaExcel(meta.fecha);
+  const fechaTxt = fecha ? fecha.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }) : "";
+  return `<div class="meta-item cumplida">
+      <div class="meta-top"><div class="meta-nombre">${icono("flag")}${meta.nombre}</div><div class="meta-pct">✅</div></div>
+      <div class="meta-sub">Meta cumplida · objetivo ${fmtMeta(meta.objetivo, meta.moneda)}${fechaTxt ? ` · fecha meta ${fechaTxt}` : ""}</div>
+    </div>`;
+}
+
+function htmlSeccionMetas(cuentas, movimientos, trm, filasMetas) {
+  const todas = resolverMetas(filasMetas).filter(m => m.estado !== "Pausada");
+  const activas = todas.filter(m => m.estado !== "Cumplida")
+    .map(m => calcularMeta(m, cuentas, movimientos, trm))
+    .sort((a, b) => (a.fecha === null) - (b.fecha === null) || (a.fecha - b.fecha));   // la más próxima primero; sin fecha al final
+  const cerradas = todas.filter(m => m.estado === "Cumplida");
+  const total = activas.length + cerradas.length;
+  if (total === 0) return "";
+  const cumplidas = activas.filter(r => r.cumplida).length + cerradas.length;
+  const promedio = activas.length ? activas.reduce((s, r) => s + Math.min(r.pct, 1), 0) / activas.length * 100 : 100;
+  const resumen = cumplidas > 0 ? `${cumplidas} de ${total} cumplidas` : `Avance promedio ${promedio.toFixed(0)}%`;
+  return `<div class="subtitulo">Metas de ahorro</div>
+    <div class="acordeon">
+      <button type="button" class="acordeon-header" data-idx="metas">
+        <span class="titulo">${icono("flag")}Mis metas (${total})</span>
+        <span class="subtotal">${resumen}</span>
+        <span class="flecha">▾</span>
+      </button>
+      <div class="acordeon-contenido oculto" id="acordeon-metas">${activas.map(htmlItemMeta).join("")}${cerradas.map(htmlItemMetaCerrada).join("")}</div>
+    </div>`;
+}
+
 async function cargarConsulta() {
   const cont = document.getElementById("consultar-contenido");
   cont.innerHTML = '<div class="estado-carga">Cargando...</div>';
   try {
-    const [filasResumen, cuentas, deudasTodas, mesActual, filasPresupuesto, filasTendencia, movimientosCompletos, trmHistorica] = await Promise.all([
+    const [filasResumen, cuentas, deudasTodas, mesActual, filasPresupuesto, filasTendencia, movimientosCompletos, trmHistorica, filasMetas] = await Promise.all([
       leerTabla("tbl_Resumen"),
       leerTabla("tbl_Cuentas"),
       leerTabla("tbl_Deudas"),
@@ -1172,7 +1336,8 @@ async function cargarConsulta() {
       leerRangoDashboard("G5:I34"),
       leerRangoDashboard("K58:M69"),
       leerTabla("tbl_Movimientos"),
-      leerTabla("tbl_TRM_Historica")
+      leerTabla("tbl_TRM_Historica"),
+      leerTabla("tbl_Metas").catch(() => null)   // si aún no creas la hoja Metas, se usan las metas de respaldo
     ]);
     const resumen = filasResumen[0] || {};
     const deudas = deudasTodas.filter(d => d.Estado === "Activa");
@@ -1387,6 +1552,7 @@ async function cargarConsulta() {
     html += `</div>`;
 
     html += htmlSeccionCDT(cuentas);
+    html += htmlSeccionMetas(cuentas, movimientosCompletos, num(resumen.TRMDelDia), filasMetas);
 
     cont.innerHTML = html;
     const btnProy = document.getElementById("btn-proy");
