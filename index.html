@@ -85,7 +85,6 @@
   .barra-progreso .relleno.ok{background:#66bb6a;}
   .barra-progreso .relleno.alerta{background:#ef5350;}
   .leyenda-barra{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-suave);}
-  .grupo-cuenta-titulo{font-size:13px;font-weight:700;color:var(--azul);margin:14px 0 4px;}
   #grafico-composicion, #grafico-distribucion-gastos, #grafico-distribucion-tipo{max-width:240px;margin:0 auto;display:block;}
   #grafico-tendencia-gastos{max-width:100%;margin:0 auto;display:block;}
   .contenedor-tendencia > div{height:320px;}
@@ -193,7 +192,6 @@
   .leyenda-barra .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px;}
   .leyenda-barra .sw.ok{background:repeating-linear-gradient(45deg,#a5d6a7,#a5d6a7 2px,#e8f5e9 2px,#e8f5e9 4px);}
   .leyenda-barra .sw.alerta{background:repeating-linear-gradient(45deg,#ef9a9a,#ef9a9a 2px,#fdecea 2px,#fdecea 4px);}
-  .proy-sep{height:1px;background:var(--borde);margin:14px 0 12px;}
   /* ---- Proyección desplegable ---- */
   .proy-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:none;border-top:1px solid var(--borde);margin-top:14px;padding:12px 0 0;cursor:pointer;font-size:13px;font-weight:700;color:var(--azul-claro);text-align:left;}
   .proy-toggle .flecha{transition:transform .15s;color:var(--texto-suave);}
@@ -262,6 +260,27 @@
   .meta-chip{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;}
   .meta-chip.ok{background:#e8f5e9;color:#1b5e20;}
   .meta-chip.alerta{background:#fdecea;color:#8e1b1b;}
+  /* ---- Pulido visual ---- */
+  .subtitulo{font-size:12px;text-align:left;margin:24px 4px 8px;letter-spacing:.06em;}
+  .kpi-integrado{display:grid;grid-template-columns:1fr 1fr;margin:16px -16px -16px;border-top:1px solid var(--borde);}
+  .kpi-integrado .kpi{padding:12px 16px;}
+  .kpi-integrado .kpi:nth-child(odd){border-right:1px solid var(--borde);}
+  .kpi-integrado .kpi:nth-child(-n+2){border-bottom:1px solid var(--borde);}
+  .kpi-integrado .valor{font-size:18px;} .kpi-integrado .etiqueta{font-size:11px;}
+  .barra-progreso .relleno.alerta{background:#e57373;} .barra-progreso .relleno.ok{background:#66bb6a;}
+  .saldos{padding:14px 16px 6px;}
+  .barra-apilada{display:flex;height:10px;border-radius:6px;overflow:hidden;gap:2px;margin-bottom:4px;}
+  .barra-apilada > div{height:100%;}
+  .saldo-grupo{border-top:1px solid var(--borde);}
+  .barra-apilada + .saldo-grupo{border-top:none;}
+  .saldo-grupo .acordeon-header{padding:13px 0;}
+  .saldo-grupo .titulo{color:var(--texto);font-weight:600;}
+  .saldo-grupo .subtotal em{font-style:normal;color:var(--texto-suave);font-size:11px;margin-left:4px;}
+  .saldo-grupo .punto{width:10px;height:10px;border-radius:50%;margin-right:10px;flex-shrink:0;}
+  .saldo-grupo .acordeon-contenido{padding:0 0 8px 20px;}
+  .saldo-grupo .fila-cuenta{padding:8px 0;font-size:13px;border-bottom:none;}
+  .saldo-grupo .nombre{font-weight:400;color:var(--texto);}
+  .saldo-grupo .cero{opacity:.45;}
 </style>
 </head>
 <body>
@@ -564,7 +583,7 @@ async function cargarDeudas() {
 function poblarSelects() {
   const selDeuda = document.getElementById("f-deuda");
   catDeudas.forEach(d => {
-    selDeuda.innerHTML += `<option value="${d.DeudaID}">${d.Nombre}</option>`;
+    selDeuda.innerHTML += `<option value="${d.DeudaID}">${esc(d.Nombre)}</option>`;
   });
 }
 
@@ -576,7 +595,7 @@ function actualizarOpcionesPorTipo(tipo) {
 
   // Cuentas para "Cuenta origen": todas las activas (ActualizacionValor no usa este campo, se oculta)
   selOrigen.innerHTML = '<option value="">Selecciona...</option>';
-  catCuentas.forEach(c => selOrigen.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`);
+  catCuentas.forEach(c => selOrigen.innerHTML += `<option value="${c.CuentaID}">${esc(c.Nombre)}</option>`);
 
   // Cuentas para "Cuenta destino": si es ActualizacionValor, solo cuentas con rendimiento pasivo
   // (Tyba, cuentas de alta rentabilidad, fondos) — las que realmente necesitas "chequear" cada mes.
@@ -584,12 +603,12 @@ function actualizarOpcionesPorTipo(tipo) {
     ? catCuentas.filter(c => c.ComportamientoSaldo === "RendimientoPasivo")
     : catCuentas;
   selDestino.innerHTML = '<option value="">Selecciona...</option>';
-  cuentasDestino.forEach(c => selDestino.innerHTML += `<option value="${c.CuentaID}">${c.Nombre}</option>`);
+  cuentasDestino.forEach(c => selDestino.innerHTML += `<option value="${c.CuentaID}">${esc(c.Nombre)}</option>`);
 
   // Categorías: solo las del tipo que corresponde (Gasto o Ingreso)
   selCategoria.innerHTML = '<option value="">Selecciona...</option>';
   catCategorias.filter(c => c.TipoCategoria === tipo).forEach(c => {
-    selCategoria.innerHTML += `<option value="${c.CategoriaID}">${c.Nombre}</option>`;
+    selCategoria.innerHTML += `<option value="${c.CategoriaID}">${esc(c.Nombre)}</option>`;
   });
   actualizarSubcategorias();
 }
@@ -599,7 +618,7 @@ function actualizarSubcategorias() {
   const selSub = document.getElementById("f-subcategoria");
   selSub.innerHTML = '<option value="">Selecciona...</option>';
   catSubcategorias.filter(s => s.CategoriaID === catID).forEach(s => {
-    selSub.innerHTML += `<option value="${s.SubcategoriaID}">${s.Nombre}</option>`;
+    selSub.innerHTML += `<option value="${s.SubcategoriaID}">${esc(s.Nombre)}</option>`;
   });
 }
 document.getElementById("f-categoria").addEventListener("change", actualizarSubcategorias);
@@ -955,7 +974,7 @@ function htmlSeccionCDT(cuentas) {
     h += `<div class="cdt-item">
         <div class="cdt-icono ${est.clase}" title="${est.texto}">${svgGrande(iconoNombre)}</div>
         <div class="cdt-info">
-          <div class="cdt-nombre">${est.emoji} ${c.Nombre}</div>
+          <div class="cdt-nombre">${est.emoji} ${esc(c.Nombre)}</div>
           <div class="cdt-detalle">${dias !== null && dias < 0 ? "Venció" : "Vence"} ${fechaTxt}${tasaTxt}</div>
           <div class="cdt-detalle">${formatoMoneda(c.SaldoActual)} ${c.Moneda || ""}</div>
         </div>
@@ -1073,7 +1092,7 @@ function htmlGastosPorTipo(tipos) {
             <div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;background:${COLOR_TIPO_GASTO[nombre]};"></div></div></td>
           <td class="num">${formatoMoneda(t.total)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
     Object.entries(t.cats).sort((a, b) => b[1] - a[1]).forEach(([cat, v]) => {
-      h += `<tr class="fila-tipo-cat"><td>${cat}</td><td class="num">${formatoMoneda(v)}</td><td class="num">${(v / total * 100).toFixed(0)}%</td></tr>`;
+      h += `<tr class="fila-tipo-cat"><td>${esc(cat)}</td><td class="num">${formatoMoneda(v)}</td><td class="num">${(v / total * 100).toFixed(0)}%</td></tr>`;
     });
   });
   h += `<tr style="font-weight:700;border-top:2px solid var(--borde);"><td>Gasto total del mes</td><td class="num">${formatoMoneda(total)}</td><td class="num">100%</td></tr>`;
@@ -1083,7 +1102,6 @@ function htmlGastosPorTipo(tipos) {
 function dibujarGraficoDistribucionTipo(tipos) {
   const canvas = document.getElementById("grafico-distribucion-tipo");
   if (!canvas || typeof Chart === "undefined") return;
-  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
   const lista = Object.entries(tipos).filter(([, t]) => t.total > 0);
   const total = lista.reduce((s, [, t]) => s + t.total, 0);
   if (chartDistribucionTipo) chartDistribucionTipo.destroy();
@@ -1155,7 +1173,7 @@ function htmlTarjetasCredito(cuentas, movimientos, hoyRef) {
     const clasePago = pagoVencido ? "pronto" : extractoCerrado <= 0 ? "vigente" : diasPago <= 3 ? "pronto" : diasPago <= 7 ? "proximo" : "vigente";
     const claseCorte = diasCorte <= 3 ? "proximo" : "neutro";
 
-    html += `<div class="tc-nombre">${c.Nombre}</div>
+    html += `<div class="tc-nombre">${esc(c.Nombre)}</div>
       <div class="tc-fechas">
         <div class="tc-fecha ${claseCorte}">
           <div class="t">${icono("calendar")}Próximo corte</div>
@@ -1283,7 +1301,7 @@ const PALABRAS_ICONO = [
   ["educacion", /estudi|curso|maestr|educac|univers|posgrado/], ["salud", /salud|medic|cirug|odont/]
 ];
 function estiloMeta(meta) {
-  const txt = normTexto(`${meta.nombre} ${meta.id}`) + " ";
+  const txt = normTexto(`${esc(meta.nombre)} ${meta.id}`) + " ";
   let ic = "bandera";
   for (const [k, re] of PALABRAS_ICONO) if (re.test(txt)) { ic = k; break; }
   const col = COLOR_POR_ICONO[ic];
@@ -1297,7 +1315,7 @@ function cabeceraMeta(meta, sub, derecha) {
   const { icono: ic, color, texto } = estiloMeta(meta);
   return `<div class="meta-head">
       <div class="meta-ico" style="background:${color}22;color:${texto};">${svgMeta(ic)}</div>
-      <div class="meta-info"><div class="meta-nombre">${meta.nombre}</div><div class="meta-fecha">${sub}</div></div>
+      <div class="meta-info"><div class="meta-nombre">${esc(meta.nombre)}</div><div class="meta-fecha">${sub}</div></div>
       <div class="meta-pct" style="color:${texto};">${derecha}</div>
     </div>`;
 }
@@ -1430,18 +1448,17 @@ async function cargarConsulta() {
             <span class="mini-patrimonio-titulo">Evolutivo</span>
           </div>
         </div>
+      <div class="kpi-integrado">
+        <div class="kpi"><div class="etiqueta">${icono("percent")}Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
+        <div class="kpi"><div class="etiqueta">${icono("shield")}Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
+        <div class="kpi"><div class="etiqueta">${icono("creditcard")}Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
+        <div class="kpi"><div class="etiqueta">${icono("trending")}Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
+      </div>
       </div>
       <div id="evolutivo-patrimonio-full" class="oculto">
         <div class="tarjeta">
           <div class="contenedor-tendencia"><div><canvas id="grafico-evolutivo-patrimonio" height="280"></canvas></div></div>
         </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="tarjeta"><div class="etiqueta">${icono("percent")}Tasa de ahorro</div><div class="valor">${formatoPorcentaje(resumen.TasaAhorroMes)}</div></div>
-        <div class="tarjeta"><div class="etiqueta">${icono("shield")}Meses de cobertura</div><div class="valor">${num(resumen.MesesCobertura)!==null?num(resumen.MesesCobertura).toFixed(1):"—"}</div></div>
-        <div class="tarjeta"><div class="etiqueta">${icono("creditcard")}Endeudamiento</div><div class="valor">${formatoPorcentaje(resumen.RatioEndeudamiento)}</div></div>
-        <div class="tarjeta"><div class="etiqueta">${icono("trending")}Rendim. inversiones</div><div class="valor">${formatoMoneda(resumen.RendimientoInversiones)}</div></div>
       </div>
 
       <div class="tarjeta">
@@ -1487,7 +1504,7 @@ async function cargarConsulta() {
       html += `<div class="tarjeta"><table class="tabla-datos"><thead><tr><th>Categoría</th><th class="num">Monto</th><th class="num">%</th></tr></thead><tbody>`;
       conGasto.forEach(c => {
         const pct = totalGastoMes > 0 ? (c.real/totalGastoMes*100) : 0;
-        html += `<tr><td>${c.nombre}<div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div></td>
+        html += `<tr><td>${esc(c.nombre)}<div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div></td>
                   <td class="num">${formatoMoneda(c.real)}</td><td class="num">${pct.toFixed(0)}%</td></tr>`;
       });
       html += `<tr style="font-weight:700;border-top:2px solid var(--borde);"><td>Gasto total del mes</td>
@@ -1521,7 +1538,7 @@ async function cargarConsulta() {
       html += `<table class="tabla-datos"><thead><tr><th></th><th>Categoría</th><th class="num">Presup.</th><th class="num">Real</th><th class="num">% usado</th></tr></thead><tbody>`;
       relevantes.forEach(c => {
         const pctEjecutado = c.presupuestado > 0 ? c.real / c.presupuestado : null;
-        html += `<tr><td class="semaforo-icono">${c.semaforo.icono}</td><td>${c.nombre}<br><span style="font-size:11px;color:var(--texto-suave);">${c.semaforo.texto}</span></td>
+        html += `<tr><td class="semaforo-icono">${c.semaforo.icono}</td><td>${esc(c.nombre)}<br><span style="font-size:11px;color:var(--texto-suave);">${c.semaforo.texto}</span></td>
                   <td class="num">${c.presupuestado>0?formatoMoneda(c.presupuestado):"—"}</td><td class="num">${formatoMoneda(c.real)}</td>
                   <td class="num">${formatoPorcentaje(pctEjecutado)}</td></tr>`;
       });
@@ -1555,24 +1572,30 @@ async function cargarConsulta() {
     const totalActivosCOP = gruposConValor.filter(g => g.tipo !== "TarjetaCredito")
       .reduce((s,g) => s + Math.max(g.valorCOP, 0), 0);
 
+    const PALETA_SALDOS = ["#5A189A", "#7B3FB8", "#9D6BD0", "#B992DD", "#D2B6EA", "#E6D5F4", "#F1E8F9"];
+    html += `<div class="tarjeta saldos">`;
+    if (totalActivosCOP > 0) {
+      html += `<div class="barra-apilada">` + gruposConValor.map((g, i) => (g.tipo === "TarjetaCredito" || g.valorCOP <= 0) ? "" :
+        `<div title="${esc(NOMBRE_TIPO[g.tipo] || g.tipo)}" style="width:${g.valorCOP / totalActivosCOP * 100}%;background:${PALETA_SALDOS[i % PALETA_SALDOS.length]};"></div>`).join("") + `</div>`;
+    }
     gruposConValor.forEach((g, i) => {
       const esTarjeta = g.tipo === "TarjetaCredito";
-      const pctGrupo = (!esTarjeta && totalActivosCOP > 0) ? Math.max(g.valorCOP,0)/totalActivosCOP*100 : null;
-      html += `
-        <div class="acordeon">
+      const pct = (!esTarjeta && totalActivosCOP > 0) ? Math.round(Math.max(g.valorCOP, 0) / totalActivosCOP * 100) : null;
+      const mixto = new Set(g.cuentas.map(c => c.Moneda)).size > 1;   // la moneda solo se repite si el grupo mezcla COP y USD
+      html += `<div class="saldo-grupo">
           <button type="button" class="acordeon-header" data-idx="${i}">
-            <span class="titulo">${icono(ICONO_TIPO[g.tipo] || "wallet")}${NOMBRE_TIPO[g.tipo] || g.tipo}</span>
-            <span class="subtotal">${textoSubtotal(g.subtotales)}</span>
+            <span class="punto" style="background:${esTarjeta ? "#b0b7c3" : PALETA_SALDOS[i % PALETA_SALDOS.length]};"></span>
+            <span class="titulo">${esc(NOMBRE_TIPO[g.tipo] || g.tipo)}</span>
+            <span class="subtotal">${textoSubtotal(g.subtotales)}${pct !== null ? `<em>${pct}%</em>` : ""}</span>
             <span class="flecha">▾</span>
           </button>
-          ${pctGrupo !== null ? `<div class="barra-grupo-cont"><div class="barra-grupo" style="width:${pctGrupo}%;"></div></div>` : ""}
-          <div class="acordeon-contenido oculto" id="acordeon-${i}">`;
-      g.cuentas.forEach(c => {
-        html += `<div class="fila-cuenta"><span class="nombre">${c.Nombre}</span><span class="saldo">${formatoMoneda(c.SaldoActual)} ${c.Moneda||""}</span></div>`;
-      });
-      html += `</div></div>`;
+          <div class="acordeon-contenido oculto" id="acordeon-${i}">${g.cuentas.map(c => {
+            const v = num(c.SaldoActual) || 0;
+            return `<div class="fila-cuenta${v === 0 ? " cero" : ""}"><span class="nombre">${esc(c.Nombre)}</span><span class="saldo">${formatoMoneda(c.SaldoActual)}${mixto || c.Moneda !== "COP" ? " " + (c.Moneda || "") : ""}</span></div>`;
+          }).join("")}</div>
+        </div>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;   // cierra la tarjeta y #vista-saldo-tipo
 
     const totalCOP = cuentas.filter(c => c.Moneda === "COP" && (c.Estado === "Activo" || !c.Estado))
       .reduce((s,c) => s + (num(c.SaldoActual) || 0), 0);
@@ -1588,7 +1611,7 @@ async function cargarConsulta() {
       html += `<div class="fila-cuenta"><span>Sin deudas activas</span></div>`;
     } else {
       deudas.forEach(d => {
-        html += `<div class="fila-cuenta"><span class="nombre">${d.Nombre}</span><span class="saldo">${formatoMoneda(d.SaldoPendiente)}</span></div>`;
+        html += `<div class="fila-cuenta"><span class="nombre">${esc(d.Nombre)}</span><span class="saldo">${formatoMoneda(d.SaldoPendiente)}</span></div>`;
       });
     }
     html += `</div>`;
@@ -1601,13 +1624,6 @@ async function cargarConsulta() {
     if (btnProy) btnProy.addEventListener("click", () => {
       document.getElementById("proy-detalle").classList.toggle("oculto");
       btnProy.classList.toggle("abierto");
-    });
-    document.querySelectorAll(".acordeon-header").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const contenido = document.getElementById("acordeon-" + btn.dataset.idx);
-        contenido.classList.toggle("oculto");
-        btn.classList.toggle("abierto");
-      });
     });
     dibujarGraficoComposicion(grupos, num(resumen.TRMDelDia) || 0);
     dibujarGraficoDistribucionGastos(conGasto);
@@ -1673,7 +1689,6 @@ function dibujarGraficoDistribucionGastos(conGasto) {
   const canvas = document.getElementById("grafico-distribucion-gastos");
   if (!canvas) return; // no se dibuja si no hay gastos ese mes (no se insertó el canvas)
   if (typeof Chart === "undefined") return;
-  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   const total = conGasto.reduce((s,c) => s + c.real, 0);
   const paleta = ["#5A189A","#240046","#66bb6a","#ffa726","#ab47bc","#78909c","#ef5350","#26a69a","#8d6e63","#5c6bc0","#d4e157","#ff7043"];
@@ -1732,7 +1747,6 @@ function dibujarMiniPatrimonio(serie) {
 function dibujarGraficoEvolutivoPatrimonio(serie) {
   const canvas = document.getElementById("grafico-evolutivo-patrimonio");
   if (!canvas || typeof Chart === "undefined") return;
-  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   const variaciones = serie.map((s, i) => {
     if (i === 0) return null;
@@ -1791,7 +1805,6 @@ function dibujarGraficoEvolutivoPatrimonio(serie) {
 function dibujarGraficoTendenciaGastos(tendencia) {
   const canvas = document.getElementById("grafico-tendencia-gastos");
   if (!canvas || typeof Chart === "undefined") return;
-  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   const variaciones = tendencia.map((t, i) => {
     if (i === 0) return null;
@@ -1864,7 +1877,6 @@ function dibujarGraficoComposicion(grupos, trm) {
     }));
     return;
   }
-  if (typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);
 
   // Excluye tarjetas de crédito (son deuda, no activo) y convierte USD a COP con la TRM del día
   // para que las porciones representen valor real, no cantidades numéricas de distinta moneda mezcladas.
@@ -2058,7 +2070,7 @@ function htmlCuentasUSD(cuentas, trm) {
     const pct = total > 0 ? saldo / total * 100 : 0;
     h += `<div class="usd-item">
         <div class="usd-info">
-          <div class="usd-nombre">${icono(ICONO_TIPO[c.TipoCuenta] || "wallet")}${c.Nombre}</div>
+          <div class="usd-nombre">${icono(ICONO_TIPO[c.TipoCuenta] || "wallet")}${esc(c.Nombre)}</div>
           <div class="usd-tipo">${NOMBRE_TIPO[c.TipoCuenta] || c.TipoCuenta || ""} · ${pct.toFixed(0)}% del total</div>
           <div class="barra-mini"><div class="relleno-mini" style="width:${pct}%;"></div></div>
         </div>
@@ -2144,12 +2156,6 @@ async function cargarDolares() {
 
     cont.innerHTML = html;
     if (trmDia) activarSimuladorUSD(costoPromedio, trmDia, saldoParaSim);
-    document.querySelectorAll("#dolares-contenido .acordeon-header").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.getElementById("acordeon-" + btn.dataset.idx).classList.toggle("oculto");
-        btn.classList.toggle("abierto");
-      });
-    });
   } catch (e) {
     cont.innerHTML = `<div class="estado-carga" style="color:#c62828;">Error al cargar: ${e.message}</div>`;
     console.error(e);
@@ -2163,6 +2169,13 @@ function estadoHistInicial() { return { texto: "", tipos: new Set(), cuenta: "",
 let estadoHist = estadoHistInicial();
 let movsHist = [];
 
+if (typeof Chart !== "undefined" && typeof ChartDataLabels !== "undefined") Chart.register(ChartDataLabels);   // una sola vez
+document.addEventListener("click", e => {   // acordeones: un solo manejador para toda la app
+  const b = e.target.closest(".acordeon-header");
+  const c = b && document.getElementById("acordeon-" + b.dataset.idx);
+  if (c) { c.classList.toggle("oculto"); b.classList.toggle("abierto"); }
+});
+function esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function normTexto(t) { return String(t == null ? "" : t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 function fechaDeInput(v) { if (!v) return null; const [a, m, d] = v.split("-").map(Number); return a ? new Date(a, m - 1, d) : null; }
 
@@ -2332,7 +2345,7 @@ async function cargarHistorial(conservarFiltros) {
       let categoriaTexto = "";
       if (f.SubcategoriaID) categoriaTexto = mapaSubcategorias[f.SubcategoriaID] || f.SubcategoriaID;
       else if (f.CategoriaID) categoriaTexto = mapaCategorias[f.CategoriaID] || f.CategoriaID;
-      f._detalle = [cuentasTexto, categoriaTexto, f.Descripcion].filter(Boolean).join(" · ");
+      f._detalle = [cuentasTexto, categoriaTexto, f.Descripcion].filter(Boolean).map(esc).join(" · ");
       // Texto en el que busca el cuadro de búsqueda (sin tildes ni mayúsculas)
       f._busqueda = normTexto([f.TipoMovimiento, nombreOrigen, nombreDestino, categoriaTexto, mapaCategorias[f.CategoriaID], f.Descripcion, f.Monto].filter(v => v != null && v !== "").join(" "));
     });
