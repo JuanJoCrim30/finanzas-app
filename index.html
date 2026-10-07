@@ -485,7 +485,25 @@ async function obtenerToken() {
   }
 }
 
+// Memoria de lecturas: las consultas GET se reutilizan 1 minuto (y las repetidas en curso se comparten).
+// Cualquier escritura (registrar, cambiar de mes, recalcular) o los botones ↻ vacían la memoria.
+const CACHE_LECTURAS_MS = 60000;
+const cacheLecturas = new Map();
+function limpiarCache() { cacheLecturas.clear(); }
 async function graphFetch(path, options = {}) {
+  const esLectura = !options.method || options.method.toUpperCase() === "GET";
+  if (!esLectura) {
+    limpiarCache();
+    try { return await graphFetchRed(path, options); } finally { limpiarCache(); }
+  }
+  const hit = cacheLecturas.get(path);
+  if (hit && Date.now() - hit.t < CACHE_LECTURAS_MS) return hit.p;
+  const p = graphFetchRed(path, options);
+  cacheLecturas.set(path, { t: Date.now(), p });
+  p.catch(() => { if (cacheLecturas.get(path) && cacheLecturas.get(path).p === p) cacheLecturas.delete(path); });   // los errores no se guardan
+  return p;
+}
+async function graphFetchRed(path, options = {}) {
   const token = await obtenerToken();
   const resp = await fetch(GRAPH + path, {
     ...options,
@@ -825,7 +843,7 @@ let chartEvolutivoPatrimonio = null;
 
 async function leerRangoDashboard(direccion) {
   const resp = await graphFetch(`/me/drive/items/${driveItemId}/workbook/worksheets('Dashboard')/range(address='${direccion}')`);
-  return resp.values;
+  return resp.values.map(fila => fila.slice());
 }
 async function leerCeldaDashboard(direccion) {
   const valores = await leerRangoDashboard(direccion);
@@ -862,7 +880,7 @@ document.getElementById("btn-aplicar-mes").addEventListener("click", async () =>
     btn.disabled = false; btn.textContent = "Aplicar";
   }
 });
-document.getElementById("btn-refrescar").addEventListener("click", cargarConsulta);
+document.getElementById("btn-refrescar").addEventListener("click", () => { limpiarCache(); cargarConsulta(); });
 
 function trmEnFecha(trmHistorica, fecha) {
   let mejor = null;
@@ -1958,8 +1976,8 @@ function formatoFechaCorta(d) {
   return d.toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" });
 }
 
-document.getElementById("btn-refrescar-historial").addEventListener("click", () => cargarHistorial(true)); // conserva los filtros
-document.getElementById("btn-refrescar-dolares").addEventListener("click", cargarDolares);
+document.getElementById("btn-refrescar-historial").addEventListener("click", () => { limpiarCache(); cargarHistorial(true); }); // conserva los filtros
+document.getElementById("btn-refrescar-dolares").addEventListener("click", () => { limpiarCache(); cargarDolares(); });
 
 // ================== TAB DÓLARES ==================
 // ---------- Dólares: equilibrio, simulador y cuentas en USD ----------
